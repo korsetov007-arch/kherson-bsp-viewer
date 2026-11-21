@@ -676,7 +676,8 @@ private:
             ? std::hypot(targetX_->value() - originX_->value(), targetY_->value() - originY_->value())
             : 0.0;
         overlay_->setTargetDetails(range, flightTime_ ? flightTime_->value() : 0.0, loadedMapName_);
-        overlay_->setTargetEnabled(mouseTracker_.enabled() && targetDefined_ && trajectoryCalculated_);
+        overlay_->setTargetEnabled(mouseTracker_.enabled() && mouseTracker_.gameForeground()
+                                  && targetDefined_ && trajectoryCalculated_);
         QString state;
         if (!mouseTracker_.enabled()) {
             state = bspvision::uiText("Tracking stopped", "Отслеживание остановлено");
