@@ -7,13 +7,13 @@ function Find-GModPath {
     $candidates = @()
     if ($GamePath) { $candidates += $GamePath }
     $candidates += @(
-        "\${env:ProgramFiles(x86)}\Steam\steamapps\common\GarrysMod",
+        "${env:ProgramFiles(x86)}\Steam\steamapps\common\GarrysMod",
         "$env:ProgramFiles\Steam\steamapps\common\GarrysMod",
-        "\${env:ProgramFiles(x86)}\Steam\steamapps\common\Garry's Mod",
+        "${env:ProgramFiles(x86)}\Steam\steamapps\common\Garry's Mod",
         "$env:ProgramFiles\Steam\steamapps\common\Garry's Mod"
     )
     $steamRoots = @()
-    $steamRoots += "\${env:ProgramFiles(x86)}\Steam"
+    $steamRoots += "${env:ProgramFiles(x86)}\Steam"
     $steamRoots += "$env:ProgramFiles\Steam"
     foreach ($root in $steamRoots) {
         $vdf = Join-Path $root "steamapps\libraryfolders.vdf"
