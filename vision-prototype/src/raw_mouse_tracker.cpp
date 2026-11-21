@@ -102,11 +102,14 @@ bool RawMouseTracker::isGModForeground() {
     const QString title = QString::fromWCharArray(windowTitle).toLower();
     const bool isSourceExecutable = path.endsWith(QStringLiteral("/hl2.exe"))
         || path.endsWith(QStringLiteral("\\hl2.exe"));
+    const bool titleIdentifiesGMod = title.contains(QStringLiteral("garry's mod"))
+        || title.contains(QStringLiteral("garrys mod"));
     const bool identifiesGMod = path.contains(QStringLiteral("garrysmod"))
         || path.contains(QStringLiteral("garry's mod"))
-        || title.contains(QStringLiteral("garry's mod"))
-        || title.contains(QStringLiteral("garrys mod"));
-    gameForeground_ = isSourceExecutable && identifiesGMod;
+        || titleIdentifiesGMod;
+    // If Windows denies querying the process image path, accept the specific GMod window title.
+    gameForeground_ = (isSourceExecutable && identifiesGMod)
+        || (path.isEmpty() && titleIdentifiesGMod);
     return gameForeground_;
 #else
     gameForeground_ = false;
