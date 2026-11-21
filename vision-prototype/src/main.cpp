@@ -204,6 +204,9 @@ private:
         if (heightfield_.isValid()) {
             mapView_->setHeightfield(heightfield_.hillshadeImage(), heightfield_.worldBounds());
             mapView_->setHeightfieldVisible(heightfieldVisible_);
+        } else {
+            mapView_->setHeightfield({}, {});
+            mapView_->setHeightfieldVisible(false);
         }
         meshView_->setMap(bspFile_.vertices(), polygons);
         ballisticsView_->setMap(bspFile_.vertices(), polygons);
