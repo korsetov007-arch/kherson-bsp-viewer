@@ -1482,7 +1482,7 @@ private:
                 "АВТОСУО ПАУЗА · выбранное окно не активно");
             return; // Never inject mouse input into another application.
         }
-        if (sample.confidence < 0.72) {
+        if (sample.confidence < 0.56) {
             autoAimStatus_ = bspvision::uiText(
                 "AUTO AIM HOLD · cl_showpos confidence is too low",
                 "АВТОСУО ОЖИДАНИЕ · низкая точность чтения cl_showpos");
