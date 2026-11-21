@@ -246,7 +246,7 @@ DecodedLine decodeLine(const QImage &mask, const FontProfile &profile, int x, in
             const uchar *pixels = mask.constScanLine(y + row) + left;
             for (int col = 0; col < profile.cellWidth; ++col) ink += pixels[col] != 0 ? 1 : 0;
         }
-        if (ink <= 1) {
+        if (ink == 0) {
             result.text.append(QLatin1Char(' '));
             continue;
         }
