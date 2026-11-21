@@ -1336,7 +1336,7 @@ private:
             if (!pid || pid == ctx->ownPid) return TRUE;
             const int length = GetWindowTextLengthW(hwnd);
             if (length <= 0) return TRUE;
-            std::wstring title(static_cast<size_t>(length) + 1, L'\\0');
+            std::wstring title(static_cast<size_t>(length) + 1, L'\0');
             const int copied = GetWindowTextW(hwnd, title.data(), length + 1);
             if (copied <= 0) return TRUE;
             title.resize(static_cast<size_t>(copied));
