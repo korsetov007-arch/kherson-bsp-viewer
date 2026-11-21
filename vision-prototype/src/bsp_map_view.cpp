@@ -67,6 +67,13 @@ void BspMapView::setHeightfieldVisible(bool visible) {
     update();
 }
 
+
+void BspMapView::setWorldLandmark(double x, double y, bool visible) {
+    landmarkWorld_ = QPointF(x, y);
+    hasLandmark_ = visible;
+    update();
+}
+
 void BspMapView::clearMap() {
     vertices_.clear();
     polygons_.clear();
@@ -75,6 +82,7 @@ void BspMapView::clearMap() {
     heightfieldContours_.clear();
     heightfieldVisible_ = false;
     hasSelection_ = false;
+    hasLandmark_ = false;
     minX_ = minY_ = minZ_ = 0.0;
     maxX_ = maxY_ = maxZ_ = 1.0;
     update();
@@ -172,6 +180,20 @@ void BspMapView::paintEvent(QPaintEvent *event) {
             painter.drawLine(worldToScreen(contour.x1(), contour.y1()),
                              worldToScreen(contour.x2(), contour.y2()));
         }
+    }
+
+
+    if (hasLandmark_) {
+        const QPointF landmark = worldToScreen(landmarkWorld_.x(), landmarkWorld_.y());
+        painter.setPen(QPen(QColor(255, 205, 75, 245), 2.0));
+        painter.setBrush(QColor(255, 205, 75, 75));
+        painter.drawEllipse(landmark, 9.0, 9.0);
+        painter.drawLine(landmark + QPointF(-15.0, 0.0), landmark + QPointF(15.0, 0.0));
+        painter.drawLine(landmark + QPointF(0.0, -15.0), landmark + QPointF(0.0, 15.0));
+        painter.setPen(QColor(255, 230, 160));
+        painter.drawText(QRectF(landmark.x() + 12.0, landmark.y() - 20.0, 170.0, 20.0),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         uiText("AIM LANDMARK", "ОРИЕНТИР НАВЕДЕНИЯ"));
     }
 
     if (hasSelection_) {
