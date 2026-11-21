@@ -95,3 +95,30 @@ Colors: green = launch, red = target, amber = trajectory.
 - If sky planes persist, toggle **Show skybox surfaces** to compare; material-name rules may need to be extended for the particular BSP.
 - Ballistics do not include collisions, map occlusion, air drag, splash radius or weapon-specific behavior. The trajectory is a visual reference; the app does not control the game.
 - If the solver reports no solution, increase speed, reduce gravity or select a closer target.
+
+
+## Экранный резервный канал: cl_showpos / Screen fallback
+
+### Русский
+
+Этот режим не использует Lua, чтение памяти процесса или нейросеть. Он захватывает прямоугольную область основного монитора через DXGI Desktop Duplication и ищет видимые строки `pos:`, `ang:` и `vel:` через пиксельные шаблоны.
+
+1. В игре включите `cl_showpos 1`, если эта переменная доступна в текущей сборке и на сервере.
+2. Во вкладке «Баллистика» откройте «Резервный экранный канал», включите чтение и задайте X/Y/ширину/высоту области захвата.
+3. Область задана в физических экранных пикселях относительно основного монитора. Она должна включать как минимум `pos:` и `ang:` строки. После изменения области нажмите «Применить область / запуск».
+4. Следите за состоянием распознавания и оценкой уверенности. Непрошедшие числовую проверку или низкоуверенные данные не принимаются.
+5. Кнопка «Использовать pos как точку запуска» копирует прочитанную позицию в начало траектории. `pos` — это `MainViewOrigin` Source, а не гарантированная позиция дульного среза. Проверьте смещение камеры/орудия для конкретной техники.
+
+Это экспериментальная первая реализация: распознавание шаблонов ещё не проверено на реальном скриншоте GMod и может зависеть от шрифта, разрешения, масштаба интерфейса и фона сцены. Native Bridge предпочтительнее, когда он доступен.
+
+### English
+
+This mode does not use Lua, process-memory access or a neural network. It captures a crop from the primary display with DXGI Desktop Duplication and looks for visible `pos:`, `ang:` and `vel:` rows using pixel templates.
+
+1. Enable `cl_showpos 1` in game, if the variable is available in that game build and server configuration.
+2. In the Ballistic tab, expand Screen fallback, enable the reader, and set the crop X/Y/width/height.
+3. Crop coordinates are physical screen pixels relative to the primary monitor. Include at least the `pos:` and `ang:` rows, then click Apply crop / start.
+4. Check the reader status and confidence score. Invalid or low-confidence samples are rejected.
+5. The Use last pos as launch point button copies the decoded position into the trajectory origin. `pos` is Source `MainViewOrigin`, not a guaranteed muzzle location; verify camera-to-weapon offset for the vehicle.
+
+This is an experimental first implementation and has not been validated against an actual GMod screenshot. Recognition can vary with font rasterization, resolution, UI scaling and scene background. Prefer Native Bridge when available.
