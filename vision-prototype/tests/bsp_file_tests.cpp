@@ -214,6 +214,8 @@ int main(int argc, char **argv) {
     const auto polygons = bsp.facePolygons();
     if (polygons.size() != 1 || polygons.first().vertices.size() != 3)
         return fail("default geometry should exclude the sky-textured face");
+    if (polygons.first().displacementSurface)
+        return fail("ordinary BSP faces must not be tagged as displacement surfaces");
     if (polygons.first().skySurface || polygons.first().materialName != QStringLiteral("brick/wall01"))
         return fail("visible face material was not resolved correctly");
     const auto allPolygons = bsp.facePolygons(true);
@@ -237,6 +239,9 @@ int main(int argc, char **argv) {
     const auto terrain = displaced.facePolygons();
     if (terrain.size() != 32)
         return fail("displacement base face should be replaced by its rendered triangles");
+    if (std::any_of(terrain.begin(), terrain.end(),
+                    [](const bspvision::BspPolygon &polygon) { return !polygon.displacementSurface; }))
+        return fail("reconstructed terrain polygons must be tagged as displacement surfaces");
     float maximumTerrainZ = -1000.0F;
     for (const auto &triangle : terrain) {
         if (triangle.vertices.size() != 3)
