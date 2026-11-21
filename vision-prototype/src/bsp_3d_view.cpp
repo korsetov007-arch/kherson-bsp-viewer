@@ -493,14 +493,14 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
                "3D-орбита · ЛКМ: вращение · колесо: зум до 24× · двойной щелчок: сброс"));
     painter.setPen(QColor(175, 198, 218));
     painter.drawText(QRectF(10, 20, width() - 20, 17), Qt::AlignLeft | Qt::AlignVCenter,
-        uiText("BSP faces: %1 (%2 rasterized, %3 occluded) · displacement: %4 (%5 rasterized, %6 occluded)",
-               "Грани BSP: %1 (%2 отрисовано, %3 скрыто) · displacement: %4 (%5 отрисовано, %6 скрыто)")
+        uiText("BSP faces %1: tris %2/%3, px %4, Z-rejected %5 | displacement %6: tris %7/%8, px %9, Z-rejected %10",
+               "Грани BSP %1: треугольники %2/%3, пиксели %4, скрыто по Z %5 | displacement %6: треугольники %7/%8, пиксели %9, скрыто по Z %10")
             .arg(sourceFacePolygons)
-            .arg(sourceRasterizedTriangles)
-            .arg(sourceFragmentsOccluded)
+            .arg(sourceRasterizedTriangles).arg(sourceProjectedTriangles)
+            .arg(sourcePixelsWritten).arg(sourceFragmentsOccluded)
             .arg(displacementPolygons)
-            .arg(displacementRasterizedTriangles)
-            .arg(displacementFragmentsOccluded));
+            .arg(displacementRasterizedTriangles).arg(displacementProjectedTriangles)
+            .arg(displacementPixelsWritten).arg(displacementFragmentsOccluded));
 }
 
 void Bsp3DView::mousePressEvent(QMouseEvent *event) {
