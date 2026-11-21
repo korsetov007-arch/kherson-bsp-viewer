@@ -8,7 +8,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 include(CTest)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Network)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
 
 qt_add_executable(bsp-geometry
     src/main.cpp
@@ -32,7 +32,7 @@ qt_add_executable(bsp-geometry
 )
 
 target_include_directories(bsp-geometry PRIVATE include)
-target_link_libraries(bsp-geometry PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
+target_link_libraries(bsp-geometry PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
 if(WIN32)
     target_link_libraries(bsp-geometry PRIVATE user32 d3d11 dxgi)
 endif()
