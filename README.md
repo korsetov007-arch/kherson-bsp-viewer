@@ -26,7 +26,7 @@ Open [index.html](index.html) in a modern browser and select a local `.bsp` file
 
 ## Live overlay / Оверлей в игре
 
-The native bridge source and setup are documented in [gmod-addon/native-bridge/README.md](gmod-addon/native-bridge/README.md). The app listens on a local Windows named pipe; the GMod binary module sends telemetry and receives HUD target-marker commands. This is a documented GMod native Lua module, not arbitrary DLL injection. A compatible client must allow local client Lua and binary modules; many public servers disable this, so the bridge cannot force itself to load there. The native module and end-to-end build still need local compilation and in-game verification.
+The native bridge source and setup are documented in [gmod-addon/native-bridge/README.md](gmod-addon/native-bridge/README.md). Run [the Windows installer](gmod-addon/install-sbgl-bridge.bat) to auto-detect the Steam install, build the native module, and copy the module + Lua adapter. The Qt app communicates through a local Windows named pipe. A compatible client must allow local client Lua and binary modules; this cannot override server restrictions. The end-to-end source is not yet compiled or verified in-game.
 
 ## Technical scope
 
