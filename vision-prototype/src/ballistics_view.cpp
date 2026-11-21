@@ -118,10 +118,25 @@ void BallisticsView::paintEvent(QPaintEvent *event) {
         const QRectF plot = panel.adjusted(12, 30, -12, -28);
         p.setPen(QPen(QColor(49, 57, 68), 1.0));
         for (int i = 1; i < 6; ++i) {
-            const qreal x = plot.left() + plot.width() * i / 6.0;
-            const qreal y = plot.top() + plot.height() * i / 6.0;
+            const qreal fraction = static_cast<qreal>(i) / 6.0;
+            const qreal x = plot.left() + plot.width() * fraction;
+            const qreal y = plot.top() + plot.height() * fraction;
             p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
             p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+            if (mode < 2) {
+                const double xValue = b.minX + (b.maxX - b.minX) * fraction;
+                const double verticalMin = mode == 0 ? b.minY : b.minZ;
+                const double verticalMax = mode == 0 ? b.maxY : b.maxZ;
+                const double verticalValue = verticalMin + (verticalMax - verticalMin) * (1.0 - fraction);
+                p.setPen(QColor(133, 146, 163));
+                p.drawText(QRectF(x - 24, plot.bottom() - 17, 48, 14),
+                           Qt::AlignHCenter | Qt::AlignVCenter,
+                           QString::number(xValue, 'f', 0));
+                p.drawText(QRectF(plot.left() + 1, y - 7, 42, 14),
+                           Qt::AlignLeft | Qt::AlignVCenter,
+                           QString::number(verticalValue, 'f', 0));
+                p.setPen(QPen(QColor(49, 57, 68), 1.0));
+            }
         }
         p.setPen(QColor(132, 145, 162));
         p.drawText(QRectF(plot.left(), plot.bottom() + 3, plot.width(), 18),
