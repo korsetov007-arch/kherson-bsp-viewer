@@ -1,9 +1,18 @@
+#include "app_language.hpp"
 #include "bsp_file.hpp"
 #include "bsp_map_view.hpp"
 #include "bsp_3d_view.hpp"
 #include "ballistics_view.hpp"
 
 #include <QAbstractItemView>
+#include <QAction>
+#include <QActionGroup>
+#include <QCheckBox>
+#include <QHash>
+#include <QLocale>
+#include <QMenu>
+#include <QMenuBar>
+#include <QSettings>
 #include <QApplication>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -32,18 +41,159 @@
 class MainWindow final : public QMainWindow {
 public:
     MainWindow() {
-        setWindowTitle(QStringLiteral("BSP Geometry & Ballistics"));
         resize(1360, 900);
-
-        auto *tabs = new QTabWidget(this);
-        setCentralWidget(tabs);
-        buildBspTab(tabs);
-        buildBallisticsTab(tabs);
-        statusBar()->showMessage(QStringLiteral(
-            "Offline tools. Load a Source BSP v20 map to inspect geometry and plan ideal projectile trajectories."));
+        QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+        const QString defaultLanguage =
+            QLocale::system().language() == QLocale::Russian ? QStringLiteral("ru") : QStringLiteral("en");
+        const QString savedLanguage = settings.value(QStringLiteral("language"), defaultLanguage).toString();
+        bspvision::setUiLanguage(savedLanguage == QStringLiteral("ru")
+            ? bspvision::UiLanguage::Russian : bspvision::UiLanguage::English);
+        createSettingsMenu();
+        rebuildInterface();
     }
 
 private:
+    void createSettingsMenu() {
+        settingsMenu_ = menuBar()->addMenu(bspvision::uiText("Settings", "Настройки"));
+        languageMenu_ = settingsMenu_->addMenu(bspvision::uiText("Language", "Язык"));
+        auto *languageGroup = new QActionGroup(this);
+        languageGroup->setExclusive(true);
+
+        englishAction_ = languageMenu_->addAction(QStringLiteral("English"));
+        englishAction_->setCheckable(true);
+        languageGroup->addAction(englishAction_);
+        russianAction_ = languageMenu_->addAction(QString::fromUtf8("Русский"));
+        russianAction_->setCheckable(true);
+        languageGroup->addAction(russianAction_);
+
+        connect(englishAction_, &QAction::triggered, this, [this] {
+            bspvision::setUiLanguage(bspvision::UiLanguage::English);
+            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            settings.setValue(QStringLiteral("language"), QStringLiteral("en"));
+            rebuildInterface();
+        });
+        connect(russianAction_, &QAction::triggered, this, [this] {
+            bspvision::setUiLanguage(bspvision::UiLanguage::Russian);
+            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            settings.setValue(QStringLiteral("language"), QStringLiteral("ru"));
+            rebuildInterface();
+        });
+    }
+
+    void updateSettingsMenuText() {
+        settingsMenu_->setTitle(bspvision::uiText("Settings", "Настройки"));
+        languageMenu_->setTitle(bspvision::uiText("Language", "Язык"));
+        englishAction_->setText(QStringLiteral("English"));
+        russianAction_->setText(QString::fromUtf8("Русский"));
+        englishAction_->setChecked(bspvision::uiLanguage() == bspvision::UiLanguage::English);
+        russianAction_->setChecked(bspvision::uiLanguage() == bspvision::UiLanguage::Russian);
+    }
+
+    void rebuildInterface() {
+        const auto value = [](QDoubleSpinBox *box, double fallback) {
+            return box ? box->value() : fallback;
+        };
+        const double ox = value(originX_, 0.0), oy = value(originY_, 0.0), oz = value(originZ_, 32.0);
+        const double tx = value(targetX_, 512.0), ty = value(targetY_, 0.0), tz = value(targetZ_, 32.0);
+        const double speed = value(speed_, 1000.0), gravity = value(gravity_, 800.0);
+        const double yaw = value(yaw_, 0.0), pitch = value(pitch_, 25.0), flight = value(flightTime_, 2.0);
+        const int previousTab = tabs_ ? tabs_->currentIndex() : 0;
+        const bool hadTrajectory = trajectoryCalculated_;
+
+        if (QWidget *oldCentral = takeCentralWidget()) delete oldCentral;
+        tabs_ = new QTabWidget(this);
+        setCentralWidget(tabs_);
+
+        bspSummary_ = nullptr;
+        coordinateLabel_ = nullptr;
+        lumpTable_ = nullptr;
+        mapView_ = nullptr;
+        meshView_ = nullptr;
+        ballisticsView_ = nullptr;
+        ballisticsSummary_ = nullptr;
+        showSkyboxCheck_ = nullptr;
+        originX_ = originY_ = originZ_ = nullptr;
+        targetX_ = targetY_ = targetZ_ = nullptr;
+        speed_ = gravity_ = yaw_ = pitch_ = flightTime_ = nullptr;
+
+        buildBspTab(tabs_);
+        buildBallisticsTab(tabs_);
+        originX_->setValue(ox); originY_->setValue(oy); originZ_->setValue(oz);
+        targetX_->setValue(tx); targetY_->setValue(ty); targetZ_->setValue(tz);
+        speed_->setValue(speed); gravity_->setValue(gravity);
+        yaw_->setValue(yaw); pitch_->setValue(pitch); flightTime_->setValue(flight);
+
+        updateSettingsMenuText();
+        setWindowTitle(bspvision::uiText("Source BSP Geometry Lab", "Source BSP: Геометрия и баллистика"));
+        if (bspFile_.isLoaded()) refreshMapViews();
+        tabs_->setCurrentIndex(std::clamp(previousTab, 0, tabs_->count() - 1));
+        if (hadTrajectory) calculateArc(false);
+        statusBar()->showMessage(bspvision::uiText(
+            "Ready. Load a Source BSP v20 map to inspect geometry and plan trajectories.",
+            "Готово. Загрузите карту Source BSP v20 для просмотра геометрии и расчёта траекторий."));
+    }
+
+    void refreshMapViews() {
+        if (!bspFile_.isLoaded() || !mapView_ || !meshView_ || !ballisticsView_) return;
+        const QVector<bspvision::BspPolygon> polygons = bspFile_.facePolygons(showSkybox_);
+        mapView_->setMap(bspFile_.vertices(), polygons);
+        meshView_->setMap(bspFile_.vertices(), polygons);
+        ballisticsView_->setMap(bspFile_.vertices(), polygons);
+        bspSummary_->setText(bspFile_.summary());
+        populateLumpTable();
+        if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
+        coordinateLabel_->setText(bspvision::uiText(
+            "Click the map preview to inspect XY coordinates. Z is ambiguous because maps can contain multiple floors. Sky-textured faces are hidden by default.",
+            "Нажмите на карту, чтобы выбрать X/Y. Координата Z неоднозначна из-за нескольких этажей. Поверхности с sky-материалами скрыты по умолчанию."));
+    }
+
+    QString localizeLumpName(const QString &name) const {
+        if (bspvision::uiLanguage() != bspvision::UiLanguage::Russian) return name;
+        static const QHash<QString, QString> names = {
+            {QStringLiteral("Entities"), QString::fromUtf8("Сущности")},
+            {QStringLiteral("Planes"), QString::fromUtf8("Плоскости")},
+            {QStringLiteral("Texture data"), QString::fromUtf8("Данные текстур")},
+            {QStringLiteral("Vertices"), QString::fromUtf8("Вершины")},
+            {QStringLiteral("Visibility"), QString::fromUtf8("Видимость")},
+            {QStringLiteral("Nodes"), QString::fromUtf8("Узлы")},
+            {QStringLiteral("Texture info"), QString::fromUtf8("Параметры текстур")},
+            {QStringLiteral("Faces"), QString::fromUtf8("Грани")},
+            {QStringLiteral("Lighting"), QString::fromUtf8("Освещение")},
+            {QStringLiteral("Occlusion"), QString::fromUtf8("Окклюзия")},
+            {QStringLiteral("Leaves"), QString::fromUtf8("Листья BSP")},
+            {QStringLiteral("Face IDs"), QStringLiteral("Face ID")},
+            {QStringLiteral("Edges"), QString::fromUtf8("Рёбра")},
+            {QStringLiteral("Surf edges"), QString::fromUtf8("Направленные рёбра")},
+            {QStringLiteral("Models"), QString::fromUtf8("Модели")},
+            {QStringLiteral("World lights"), QString::fromUtf8("Источники света мира")},
+            {QStringLiteral("Leaf faces"), QString::fromUtf8("Грани листьев")},
+            {QStringLiteral("Leaf brushes"), QString::fromUtf8("Объёмы листьев")},
+            {QStringLiteral("Brushes"), QStringLiteral("Brushes")},
+            {QStringLiteral("Brush sides"), QString::fromUtf8("Стороны брашей")},
+            {QStringLiteral("Areas"), QString::fromUtf8("Области")},
+            {QStringLiteral("Area portals"), QString::fromUtf8("Порталы областей")},
+            {QStringLiteral("Portals"), QString::fromUtf8("Порталы")},
+            {QStringLiteral("Clusters"), QString::fromUtf8("Кластеры")},
+            {QStringLiteral("Portal vertices"), QString::fromUtf8("Вершины порталов")},
+            {QStringLiteral("Cluster portals"), QString::fromUtf8("Порталы кластеров")},
+            {QStringLiteral("Displacement info"), QString::fromUtf8("Данные смещений")},
+            {QStringLiteral("Original faces"), QString::fromUtf8("Исходные грани")},
+            {QStringLiteral("Physics displacement"), QString::fromUtf8("Физические смещения")},
+            {QStringLiteral("Physics collision"), QString::fromUtf8("Физические коллизии")},
+            {QStringLiteral("Vertex normals"), QString::fromUtf8("Нормали вершин")},
+            {QStringLiteral("Vertex normal indices"), QString::fromUtf8("Индексы нормалей")},
+            {QStringLiteral("Displacement vertices"), QString::fromUtf8("Вершины смещений")},
+            {QStringLiteral("Packed files"), QString::fromUtf8("Упакованные файлы")},
+            {QStringLiteral("Cubemaps"), QStringLiteral("Cubemaps")},
+            {QStringLiteral("Texture string data"), QString::fromUtf8("Строки текстур")},
+            {QStringLiteral("Texture string table"), QString::fromUtf8("Таблица строк текстур")},
+            {QStringLiteral("Overlays"), QString::fromUtf8("Накладки")},
+            {QStringLiteral("Displacement triangles"), QString::fromUtf8("Треугольники смещений")},
+            {QStringLiteral("Map flags"), QString::fromUtf8("Флаги карты")}
+        };
+        return names.value(name, name);
+    }
+
     void buildBspTab(QTabWidget *tabs) {
         auto *tab = new QWidget(tabs);
         auto *layout = new QVBoxLayout(tab);
