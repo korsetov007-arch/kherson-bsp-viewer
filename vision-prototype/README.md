@@ -10,7 +10,7 @@ A standalone Qt 6 / C++20 Windows application for offline BSP inspection and vis
 - Ratio-test descriptor filtering and RANSAC homography verification; the UI reports the inlier count separately from raw matches.
 - Load Source **BSP version 20** files with validation of the VBSP signature, 64 lump ranges, and core geometry record lengths.
 - Parse vertices, edges, surfedges, and faces; reconstruct valid face outlines.
-- Preview the map from above in XY, click to inspect XY coordinates, and inspect a table of lump sizes and record counts.
+- Preview face outlines from above in XY, click to inspect XY coordinates, orbit a simple painter-based 3D view with drag-to-rotate and wheel-to-zoom, and inspect a table of lump sizes and record counts.
 - Synthetic BSP parser tests check header handling, geometry reconstruction, and rejection of invalid signature/lump ranges.
 - Local-only processing; no neural-model files are downloaded or required.
 
@@ -18,7 +18,7 @@ A standalone Qt 6 / C++20 Windows application for offline BSP inspection and vis
 
 The current feature matcher is ORB, a classical computer-vision baseline rather than a neural network. RANSAC homography verification is useful for image-to-image matching, but it is **not** a 3D camera-pose estimate.
 
-The BSP preview is a top-down outline view. A click reports X/Y only: Z is intentionally not guessed because several floors or ceilings can share the same XY position. BSP v20 is the only supported version in this prototype. Materials and textures are not rendered.
+The BSP preview has a top-down XY outline mode and a lightweight painter-based 3D orbit mode. A click reports X/Y only: Z is intentionally not guessed because several floors or ceilings can share the same XY position. BSP v20 is the only supported version in this prototype. Materials and textures are not rendered.
 
 The next planned increments are user-selected screen capture, optional learned matching via ONNX Runtime, 2D-to-3D landmark association, camera-intrinsic calibration, and confidence-checked pose estimation.
 
@@ -68,7 +68,7 @@ If you already opened the repository root in Visual Studio, use **File → Open 
 
 ## Using the app
 
-1. In **BSP geometry**, choose a Source BSP v20 file. Check the summary and lump table; click the top-down preview to read XY.
+1. In **BSP geometry**, choose a Source BSP v20 file. Check the summary and lump table. Use **Top-down XY** for coordinate inspection or **Orbit 3D** to rotate the geometry (drag) and zoom (wheel).
 2. In **Visual matching**, load a reference image. To grab the game display, choose **Capture primary screen (2 s)** and switch to the game after the app hides; otherwise load a screenshot file.
 3. Choose **Find visual matches**. Inspect the drawn match lines and RANSAC inlier count. Treat this as a diagnostic, not a reliable camera pose.
 
