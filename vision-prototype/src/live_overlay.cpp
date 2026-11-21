@@ -45,8 +45,8 @@ void LiveOverlay::showOverlayOn(const QRect &geometry) {
     const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     SetWindowLongPtrW(hwnd, GWL_EXSTYLE,
         style | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
-    SetWindowPos(hwnd, HWND_TOPMOST, geometry.x(), geometry.y(), geometry.width(), geometry.height(),
-                 SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
+    SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
 #endif
     update();
 }
