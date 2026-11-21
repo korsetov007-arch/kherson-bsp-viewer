@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <utility>
 #include <vector>
 
@@ -317,7 +318,7 @@ void Bsp3DView::mouseMoveEvent(QMouseEvent *event) {
         const QPoint delta = current - lastMousePosition_;
         lastMousePosition_ = current;
         if (!delta.isNull()) {
-            yaw_ = std::remainder(yaw_ + delta.x() * 0.009, 2.0 * M_PI);
+            yaw_ = std::remainder(yaw_ + delta.x() * 0.009, 2.0 * std::numbers::pi);
             pitch_ = std::clamp(pitch_ - delta.y() * 0.009, -1.42, 1.42);
             update();
         }
