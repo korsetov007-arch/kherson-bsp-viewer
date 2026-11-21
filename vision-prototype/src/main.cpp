@@ -445,8 +445,8 @@ private:
             ballisticsView_->clearTrajectory();
             trajectoryCalculated_ = false;
             targetDefined_ = false;
-            writeAimState(false, QStringLiteral("No target selected"));
-            ballisticsSummary_->setText(bspvision::uiText("Trajectory and live aim target cleared.", "Траектория и цель для HUD очищены."));
+            ballisticsSummary_->setText(bspvision::uiText("Trajectory and overlay target cleared.", "Траектория и цель оверлея очищены."));
+            syncOverlay();
         });
     }
 
