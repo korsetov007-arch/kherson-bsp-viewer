@@ -224,7 +224,7 @@ void LiveOverlay::paintEvent(QPaintEvent *event) {
                      Qt::AlignLeft | Qt::AlignVCenter,
                      uiText("SOURCE BSP GEOMETRY LAB  ·  EXTERNAL OVERLAY",
                             "SOURCE BSP GEOMETRY LAB  ·  ВНЕШНИЙ ОВЕРЛЕЙ"));
-    painter.setPen(accent);
+    painter.setPen(landmarkEnabled_ ? QColor(255, 190, 55) : QColor(89, 235, 176));
     const QString instruction = landmarkEnabled_
         ? uiText("Aiming ring: GREEN = centered · F7 toggles", "Круг наведения: ЗЕЛЁНЫЙ = наведено · F7 включает/выключает")
         : uiText("Trajectory aim indicator", "Индикатор наведения по траектории");
