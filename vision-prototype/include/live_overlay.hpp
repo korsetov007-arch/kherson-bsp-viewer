@@ -5,7 +5,6 @@
 #include <QElapsedTimer>
 #include <QPointF>
 #include <QString>
-#include <QVector3D>
 
 namespace bspvision {
 
@@ -20,8 +19,6 @@ public:
     void setTrackingStatus(const QString &status);
     void setTargetDetails(double range, double flightSeconds, const QString &mapName);
     void setTargetEnabled(bool enabled);
-    void setLandmark(const QVector3D &worldPosition, const QVector3D &cameraPosition,
-                     double yawDeg, double sourcePitchDeg, bool enabled);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -42,14 +39,6 @@ private:
     QPointF smoothedTargetScreen_;
     bool hasSmoothedTargetScreen_ = false;
     QElapsedTimer targetSmoothingClock_;
-    bool landmarkEnabled_ = false;
-    QVector3D landmarkWorldPosition_;
-    QVector3D cameraPosition_;
-    double landmarkYaw_ = 0.0;
-    double landmarkPitch_ = 0.0;
-    QPointF smoothedLandmarkScreen_;
-    bool hasSmoothedLandmarkScreen_ = false;
-    QElapsedTimer landmarkSmoothingClock_;
 };
 
 } // namespace bspvision
