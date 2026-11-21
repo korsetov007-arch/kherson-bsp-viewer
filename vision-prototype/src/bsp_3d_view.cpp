@@ -112,7 +112,7 @@ double edgeFunction(const ScreenVertex &a, const ScreenVertex &b,
 void rasterizeTriangle(QImage &image, std::vector<double> &depthBuffer,
                        const QRectF &viewport, const ScreenVertex &a,
                        const ScreenVertex &b, const ScreenVertex &c, QRgb color,
-                       quint64 *pixelsWritten, quint64 *fragmentsOccluded) {
+                       quint64 *fragmentsWritten, quint64 *fragmentsOccluded) {
     const double area = edgeFunction(a, b, c.x, c.y);
     if (!std::isfinite(area) || std::abs(area) < 1e-8) return;
 
@@ -154,7 +154,7 @@ void rasterizeTriangle(QImage &image, std::vector<double> &depthBuffer,
             }
             depthBuffer[index] = depth;
             pixels[x] = color;
-            if (pixelsWritten) ++(*pixelsWritten);
+            if (fragmentsWritten) ++(*fragmentsWritten);
         }
     }
 }
@@ -354,8 +354,8 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
     int displacementProjectedTriangles = 0;
     int sourceRasterizedTriangles = 0;
     int displacementRasterizedTriangles = 0;
-    quint64 sourcePixelsWritten = 0;
-    quint64 displacementPixelsWritten = 0;
+    quint64 sourceFragmentsWritten = 0;
+    quint64 displacementFragmentsWritten = 0;
     quint64 sourceFragmentsOccluded = 0;
     quint64 displacementFragmentsOccluded = 0;
 
@@ -470,7 +470,7 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
                 continue;
 
             quint64 &pixelCounter = face.displacementSurface
-                ? displacementPixelsWritten : sourcePixelsWritten;
+                ? displacementFragmentsWritten : sourceFragmentsWritten;
             quint64 &occludedCounter = face.displacementSurface
                 ? displacementFragmentsOccluded : sourceFragmentsOccluded;
             const quint64 pixelsBefore = pixelCounter;
@@ -493,14 +493,14 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
                "3D-орбита · ЛКМ: вращение · колесо: зум до 24× · двойной щелчок: сброс"));
     painter.setPen(QColor(175, 198, 218));
     painter.drawText(QRectF(10, 20, width() - 20, 17), Qt::AlignLeft | Qt::AlignVCenter,
-        uiText("BSP faces %1: tris %2/%3, px %4, Z-rejected %5 | displacement %6: tris %7/%8, px %9, Z-rejected %10",
-               "Грани BSP %1: треугольники %2/%3, пиксели %4, скрыто по Z %5 | displacement %6: треугольники %7/%8, пиксели %9, скрыто по Z %10")
+        uiText("BSP faces %1: tris %2/%3, frags %4, Z-rejected %5 | displacement %6: tris %7/%8, frags %9, Z-rejected %10",
+               "Грани BSP %1: треугольники %2/%3, фрагменты %4, скрыто по Z %5 | displacement %6: треугольники %7/%8, фрагменты %9, скрыто по Z %10")
             .arg(sourceFacePolygons)
             .arg(sourceRasterizedTriangles).arg(sourceProjectedTriangles)
-            .arg(sourcePixelsWritten).arg(sourceFragmentsOccluded)
+            .arg(sourceFragmentsWritten).arg(sourceFragmentsOccluded)
             .arg(displacementPolygons)
             .arg(displacementRasterizedTriangles).arg(displacementProjectedTriangles)
-            .arg(displacementPixelsWritten).arg(displacementFragmentsOccluded));
+            .arg(displacementFragmentsWritten).arg(displacementFragmentsOccluded));
 }
 
 void Bsp3DView::mousePressEvent(QMouseEvent *event) {
