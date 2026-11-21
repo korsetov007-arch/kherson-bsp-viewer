@@ -1,4 +1,5 @@
 #include "bsp_map_view.hpp"
+#include "app_language.hpp"
 
 #include <QMouseEvent>
 #include <QPainter>
@@ -20,18 +21,26 @@ void BspMapView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPol
     vertices_ = vertices;
     polygons_ = polygons;
     hasSelection_ = false;
-    if (!vertices_.isEmpty()) {
-        minX_ = maxX_ = vertices_.first().x;
-        minY_ = maxY_ = vertices_.first().y;
-        minZ_ = maxZ_ = vertices_.first().z;
-        for (const BspVertex &vertex : vertices_) {
-            minX_ = std::min(minX_, static_cast<double>(vertex.x));
-            maxX_ = std::max(maxX_, static_cast<double>(vertex.x));
-            minY_ = std::min(minY_, static_cast<double>(vertex.y));
-            maxY_ = std::max(maxY_, static_cast<double>(vertex.y));
-            minZ_ = std::min(minZ_, static_cast<double>(vertex.z));
-            maxZ_ = std::max(maxZ_, static_cast<double>(vertex.z));
+
+    bool haveBounds = false;
+    for (const BspPolygon &polygon : polygons_) {
+        for (const BspVertex &vertex : polygon.vertices) {
+            if (!haveBounds) {
+                minX_ = maxX_ = vertex.x;
+                minY_ = maxY_ = vertex.y;
+                minZ_ = maxZ_ = vertex.z;
+                haveBounds = true;
+            } else {
+                minX_ = std::min(minX_, static_cast<double>(vertex.x));
+                maxX_ = std::max(maxX_, static_cast<double>(vertex.x));
+                minY_ = std::min(minY_, static_cast<double>(vertex.y));
+                maxY_ = std::max(maxY_, static_cast<double>(vertex.y));
+                minZ_ = std::min(minZ_, static_cast<double>(vertex.z));
+                maxZ_ = std::max(maxZ_, static_cast<double>(vertex.z));
+            }
         }
+    }
+    if (haveBounds) {
         if (maxX_ - minX_ < 1.0) { minX_ -= 0.5; maxX_ += 0.5; }
         if (maxY_ - minY_ < 1.0) { minY_ -= 0.5; maxY_ += 0.5; }
         if (maxZ_ - minZ_ < 1.0) { minZ_ -= 0.5; maxZ_ += 0.5; }
@@ -95,10 +104,10 @@ void BspMapView::paintEvent(QPaintEvent *event) {
     painter.setPen(QPen(QColor(72, 82, 96), 1.0));
     painter.drawRect(plot);
 
-    if (vertices_.isEmpty()) {
+    if (polygons_.isEmpty()) {
         painter.setPen(QColor(205, 211, 220));
         painter.drawText(plot, Qt::AlignCenter | Qt::TextWordWrap,
-                         QStringLiteral("Load a Source BSP v20 file to preview its top-down geometry."));
+                         uiText("Load a Source BSP v20 file to preview its top-down geometry.", "Загрузите карту Source BSP v20, чтобы увидеть геометрию сверху."));
         return;
     }
 
@@ -131,12 +140,12 @@ void BspMapView::paintEvent(QPaintEvent *event) {
 
     painter.setPen(QColor(211, 216, 224));
     painter.drawText(QRectF(12, 4, width() - 24, 18), Qt::AlignLeft | Qt::AlignVCenter,
-                     QStringLiteral("Top-down XY view • faces: %1 • Z range: %2 to %3")
+                     uiText("Top-down XY view • faces: %1 • Z range: %2 to %3", "Вид сверху XY • граней: %1 • диапазон Z: %2 - %3")
                          .arg(polygons_.size()).arg(minZ_, 0, 'f', 1).arg(maxZ_, 0, 'f', 1));
 }
 
 void BspMapView::mousePressEvent(QMouseEvent *event) {
-    if (event->button() != Qt::LeftButton || vertices_.isEmpty()) {
+    if (event->button() != Qt::LeftButton || polygons_.isEmpty()) {
         QWidget::mousePressEvent(event);
         return;
     }
