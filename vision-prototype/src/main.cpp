@@ -376,7 +376,7 @@ private:
         sensitivity_->setSingleStep(0.25);
         auto makeFineField = [liveGroup](double value) {
             auto *field = new QDoubleSpinBox(liveGroup);
-            field->setRange(0.0001, 1.0);
+            field->setRange(-1.0, 1.0);
             field->setDecimals(4);
             field->setSingleStep(0.001);
             field->setValue(value);
