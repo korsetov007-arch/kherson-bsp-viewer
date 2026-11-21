@@ -1,4 +1,5 @@
 #include "live_overlay.hpp"
+#include "app_language.hpp"
 
 #include <QGuiApplication>
 #include <QPainter>
@@ -161,19 +162,26 @@ void LiveOverlay::paintEvent(QPaintEvent *event) {
     painter.drawRoundedRect(panelRect, 7.0, 7.0);
     painter.setPen(QColor(90, 210, 255));
     painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 8, panelRect.width() - 22, 18),
-                     Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("SOURCE BSP GEOMETRY LAB  ·  EXTERNAL OVERLAY"));
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     uiText("SOURCE BSP GEOMETRY LAB  ·  EXTERNAL OVERLAY",
+                            "SOURCE BSP GEOMETRY LAB  ·  ВНЕШНИЙ ОВЕРЛЕЙ"));
     painter.setPen(accent);
     const QString instruction = offScreen
-        ? QStringLiteral("TURN  ·  Δ yaw %1°  ·  Δ pitch %2°").arg(yawDelta, 0, 'f', 1).arg(pitchDelta, 0, 'f', 1)
-        : QStringLiteral("Δ yaw %1°  ·  Δ pitch %2°").arg(yawDelta, 0, 'f', 1).arg(pitchDelta, 0, 'f', 1);
+        ? uiText("TURN  ·  Δ yaw %1°  ·  Δ pitch %2°", "ПОВОРОТ  ·  Δ азимут %1°  ·  Δ наклон %2°")
+              .arg(yawDelta, 0, 'f', 1).arg(pitchDelta, 0, 'f', 1)
+        : uiText("Δ yaw %1°  ·  Δ pitch %2°", "Δ азимут %1°  ·  Δ наклон %2°")
+              .arg(yawDelta, 0, 'f', 1).arg(pitchDelta, 0, 'f', 1);
     painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 29, panelRect.width() - 22, 18),
                      Qt::AlignLeft | Qt::AlignVCenter, instruction);
     painter.setPen(QColor(235, 239, 245));
     painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 50, panelRect.width() - 22, 18),
                      Qt::AlignLeft | Qt::AlignVCenter,
-                     QStringLiteral("Range %1 units  ·  flight %2 s").arg(range_, 0, 'f', 0).arg(flightSeconds_, 0, 'f', 2));
+                     uiText("Range %1 units  ·  flight %2 s", "Дальность %1 ед.  ·  полёт %2 с")
+                         .arg(range_, 0, 'f', 0).arg(flightSeconds_, 0, 'f', 2));
     painter.setPen(QColor(184, 197, 211));
-    const QString mapLabel = mapName_.isEmpty() ? QStringLiteral("BSP map not specified") : QStringLiteral("Map: ") + mapName_;
+    const QString mapLabel = mapName_.isEmpty()
+        ? uiText("BSP map not specified", "BSP-карта не выбрана")
+        : uiText("Map: ", "Карта: ") + mapName_;
     painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 72, panelRect.width() - 22, 18),
                      Qt::AlignLeft | Qt::AlignVCenter, mapLabel + QStringLiteral("  ·  ") + trackingStatus_);
 }
