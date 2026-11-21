@@ -1,0 +1,13 @@
+{
+  "name": "bsp-vision-prototype",
+  "version-string": "0.2.0",
+  "dependencies": [
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": [
+        "calib3d"
+      ]
+    }
+  ]
+}
