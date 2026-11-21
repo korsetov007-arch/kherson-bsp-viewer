@@ -24,12 +24,6 @@
 #include <QList>
 #include <QScreen>
 #include <QTimer>
-#include <QLocalServer>
-#include <QLocalSocket>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
-#include <QDateTime>
 #include <QFileInfo>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -37,6 +31,8 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QMainWindow>
+#include <QPainter>
+#include <QKeyEvent>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStatusBar>
@@ -52,9 +48,134 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <QVector3D>
 #include <QtMath>
 
+
+class ScreenRegionSelector final : public QWidget {
+public:
+    explicit ScreenRegionSelector(QScreen *screen, QWidget *parent = nullptr)
+        : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint),
+          screen_(screen) {
+        if (screen_) setGeometry(screen_->geometry());
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_DeleteOnClose);
+        setMouseTracking(true);
+        setFocusPolicy(Qt::StrongFocus);
+        setCursor(Qt::CrossCursor);
+    }
+
+    std::function<void(const QRect &)> regionSelected;
+    std::function<void()> canceled;
+
+protected:
+    void paintEvent(QPaintEvent *event) override {
+        Q_UNUSED(event);
+        QPainter painter(this);
+        painter.fillRect(rect(), QColor(8, 12, 18, 92));
+        painter.setPen(QColor(245, 248, 252));
+        painter.setBrush(QColor(20, 27, 38, 220));
+        const QRect banner(24, 22, std::min(width() - 48, 650), 58);
+        painter.drawRoundedRect(banner, 8, 8);
+        painter.drawText(banner.adjusted(14, 5, -14, -5),
+                         Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap,
+                         message_.isEmpty()
+                             ? QStringLiteral("Drag a rectangle around cl_showpos pos:/ang: (and vel:) lines. Esc cancels.")
+                             : message_);
+
+        if (dragging_) {
+            const QRect selection = currentRect();
+            painter.setPen(QPen(QColor(95, 255, 188), 2, Qt::SolidLine));
+            painter.setBrush(QColor(76, 230, 170, 42));
+            painter.drawRect(selection);
+            painter.setPen(QColor(245, 248, 252));
+            painter.setBrush(QColor(20, 27, 38, 220));
+            const QString sizeText = QStringLiteral("%1 × %2 px").arg(selection.width()).arg(selection.height());
+            QRect label(selection.left(), std::max(92, selection.top() - 28), 140, 24);
+            if (label.right() > width()) label.moveRight(width() - 8);
+            painter.drawRoundedRect(label, 4, 4);
+            painter.drawText(label, Qt::AlignCenter, sizeText);
+        }
+    }
+
+    void mousePressEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            anchor_ = event->position().toPoint();
+            cursorPosition_ = anchor_;
+            dragging_ = true;
+            message_.clear();
+            update();
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::RightButton) {
+            cancelSelection();
+            event->accept();
+            return;
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override {
+        if (dragging_) {
+            cursorPosition_ = event->position().toPoint();
+            update();
+            event->accept();
+            return;
+        }
+        QWidget::mouseMoveEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override {
+        if (event->button() != Qt::LeftButton || !dragging_) {
+            QWidget::mouseReleaseEvent(event);
+            return;
+        }
+        cursorPosition_ = event->position().toPoint();
+        dragging_ = false;
+        const QRect selected = currentRect().intersected(rect());
+        if (selected.width() < 160 || selected.height() < 32) {
+            message_ = QStringLiteral("Area too small. Drag at least 160 × 32 px around the text; Esc cancels.");
+            update();
+            event->accept();
+            return;
+        }
+
+        const qreal ratio = screen_ ? screen_->devicePixelRatio() : 1.0;
+        const QRect physicalPixels(
+            qRound(selected.x() * ratio), qRound(selected.y() * ratio),
+            qRound(selected.width() * ratio), qRound(selected.height() * ratio));
+        if (regionSelected) regionSelected(physicalPixels);
+        close();
+        event->accept();
+    }
+
+    void keyPressEvent(QKeyEvent *event) override {
+        if (event->key() == Qt::Key_Escape) {
+            cancelSelection();
+            event->accept();
+            return;
+        }
+        QWidget::keyPressEvent(event);
+    }
+
+private:
+    QRect currentRect() const {
+        return QRect(anchor_, cursorPosition_).normalized();
+    }
+
+    void cancelSelection() {
+        if (canceled) canceled();
+        close();
+    }
+
+    QScreen *screen_ = nullptr;
+    QPoint anchor_;
+    QPoint cursorPosition_;
+    bool dragging_ = false;
+    QString message_;
+};
 
 class MainWindow final : public QMainWindow {
 public:
@@ -72,22 +193,6 @@ public:
         createSettingsMenu();
         rebuildInterface();
         overlay_ = new bspvision::LiveOverlay();
-        bridgeServer_ = new QLocalServer(this);
-        QLocalServer::removeServer(QStringLiteral("SBGLBridge"));
-        bridgeServer_->listen(QStringLiteral("SBGLBridge"));
-        connect(bridgeServer_, &QLocalServer::newConnection, this, [this] {
-            if (bridgeSocket_) { bridgeSocket_->disconnect(this); bridgeSocket_->deleteLater(); }
-            bridgeSocket_ = bridgeServer_->nextPendingConnection();
-            bridgeConnected_ = bridgeSocket_ != nullptr;
-            if (bridgeSocket_) {
-                connect(bridgeSocket_, &QLocalSocket::readyRead, this, [this] { readBridgeMessages(); });
-                connect(bridgeSocket_, &QLocalSocket::disconnected, this, [this] {
-                    bridgeConnected_ = false; bridgeTelemetry_ = {}; bridgePositionInitialized_ = false;
-                    if (bridgeSocket_) bridgeSocket_->deleteLater();
-                    bridgeSocket_ = nullptr; syncOverlay();
-                });
-            }
-        });
         overlayTimer_ = new QTimer(this);
         connect(overlayTimer_, &QTimer::timeout, this, [this] { syncOverlay(); });
         overlayTimer_->start(16);
@@ -169,6 +274,7 @@ private:
         liveStatusLabel_ = nullptr;
         liveTelemetryLabel_ = nullptr;
         screenReaderStatusLabel_ = nullptr;
+        cropRegionLabel_ = nullptr;
         screenReaderEnabledCheck_ = nullptr;
         screenCaptureX_ = screenCaptureY_ = screenCaptureWidth_ = screenCaptureHeight_ = nullptr;
         useScreenPositionButton_ = nullptr;
@@ -488,7 +594,7 @@ private:
         auto *controls = new QHBoxLayout();
 
         auto *liveGroup = new QGroupBox(bspvision::uiText(
-            "Native SBGL Bridge · in-game HUD", "Нативный SBGL Bridge · игровой HUD"), tab);
+            "External overlay · cl_showpos tracking", "Внешний оверлей · отслеживание cl_showpos"), tab);
         auto *liveLayout = new QVBoxLayout(liveGroup);
         currentYawInit_ = makeCoordinate(0.0, liveGroup);
         currentPitchInit_ = makeCoordinate(0.0, liveGroup);
@@ -507,8 +613,8 @@ private:
         fovRow->addStretch();
         liveLayout->addLayout(fovRow);
         liveStatusLabel_ = new QLabel(bspvision::uiText(
-            "Native Bridge connects automatically when available. The cl_showpos screen fallback is configured below.",
-            "Native Bridge подключается автоматически при доступности. Экранный режим cl_showpos настраивается ниже."), liveGroup);
+            "Overlay angles are supplied only by the cl_showpos screen reader below. Select the visible text area with the mouse.",
+            "Углы для оверлея берутся только из экранного чтения cl_showpos ниже. Выделите мышью область с текстом."), liveGroup);
         liveStatusLabel_->setWordWrap(true);
         liveLayout->addWidget(liveStatusLabel_);
         liveTelemetryLabel_ = new QLabel(liveGroup);
@@ -521,7 +627,7 @@ private:
         connect(overlayFov_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) { syncOverlay(); });
 
         auto *screenGroup = new QGroupBox(
-            bspvision::uiText("Screen fallback · cl_showpos (no Lua)", "Резервный экранный канал · cl_showpos (без Lua)"), tab);
+            bspvision::uiText("cl_showpos screen reader", "Экранное чтение cl_showpos"), tab);
         auto *screenLayout = new QVBoxLayout(screenGroup);
         QSettings screenSettings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
         QScreen *primary = QGuiApplication::primaryScreen();
@@ -531,6 +637,13 @@ private:
             bspvision::uiText("Enable DXGI template reader", "Включить шаблонное распознавание через DXGI"), screenGroup);
         screenReaderEnabledCheck_->setChecked(screenSettings.value(QStringLiteral("clShowPos/enabled"), false).toBool());
         screenLayout->addWidget(screenReaderEnabledCheck_);
+
+        auto *selectCropButton = new QPushButton(
+            bspvision::uiText("Select crop with mouse", "Выделить область мышью"), screenGroup);
+        screenLayout->addWidget(selectCropButton);
+        cropRegionLabel_ = new QLabel(screenGroup);
+        cropRegionLabel_->setWordWrap(true);
+        screenLayout->addWidget(cropRegionLabel_);
 
         auto *cropRow = new QHBoxLayout();
         const auto makeScreenField = [screenGroup](int minimum, int maximum, int value) {
@@ -566,8 +679,8 @@ private:
 
         screenReaderStatusLabel_ = new QLabel(
             bspvision::uiText(
-                "Uses the primary monitor. Enable cl_showpos 1 in the game; the crop must include pos:, ang: and vel:.",
-                "Используется основной монитор. Включите cl_showpos 1; область должна включать строки pos:, ang: и vel:."), screenGroup);
+                "Enable cl_showpos 1 and drag a rectangle around the visible pos:/ang: rows (vel: is optional). Select again any time to adjust the crop. Borderless/windowed game mode works best.",
+                "Включите cl_showpos 1 и выделите рамкой видимые строки pos:/ang: (vel: необязательна). Выделять заново можно в любой момент. Лучше работает оконный режим или безрамочное окно."), screenGroup);
         screenReaderStatusLabel_->setWordWrap(true);
         screenLayout->addWidget(screenReaderStatusLabel_);
 
@@ -577,8 +690,8 @@ private:
         screenLayout->addWidget(useScreenPositionButton_);
         auto *screenNote = new QLabel(
             bspvision::uiText(
-                "The reader uses classic pixel-template matching, not OCR/NN. pos is Source MainViewOrigin and may differ from the weapon muzzle; verify it before using it as the launch point.",
-                "Чтение выполняется по пиксельным шаблонам, без OCR/нейросети. pos — это MainViewOrigin Source, он может отличаться от дульного среза; проверьте координаты перед использованием."), screenGroup);
+                "Classic pixel-template matching; no OCR engine, neural network, Lua module or bridge is used. pos is Source MainViewOrigin and may differ from the weapon muzzle.",
+                "Распознавание пиксельными шаблонами; OCR, нейросеть, Lua-модуль и мост не используются. pos — это MainViewOrigin Source, он может отличаться от дульного среза."), screenGroup);
         screenNote->setWordWrap(true);
         screenLayout->addWidget(screenNote);
         layout->addWidget(screenGroup);
@@ -589,7 +702,10 @@ private:
             if (screenCaptureY_) settings.setValue(QStringLiteral("clShowPos/y"), screenCaptureY_->value());
             if (screenCaptureWidth_) settings.setValue(QStringLiteral("clShowPos/width"), screenCaptureWidth_->value());
             if (screenCaptureHeight_) settings.setValue(QStringLiteral("clShowPos/height"), screenCaptureHeight_->value());
+            updateCropRegionLabel();
         };
+        updateCropRegionLabel();
+        connect(selectCropButton, &QPushButton::clicked, this, [this] { beginCropSelection(); });
         for (QSpinBox *field : {screenCaptureX_, screenCaptureY_, screenCaptureWidth_, screenCaptureHeight_}) {
             connect(field, qOverload<int>(&QSpinBox::valueChanged), this, [persistScreenCrop](int) { persistScreenCrop(); });
         }
@@ -727,6 +843,54 @@ private:
         }
     }
 
+    void updateCropRegionLabel() {
+        if (!cropRegionLabel_ || !screenCaptureX_ || !screenCaptureY_ ||
+            !screenCaptureWidth_ || !screenCaptureHeight_) return;
+        cropRegionLabel_->setText(bspvision::uiText(
+            "Crop (physical screen pixels): X=%1, Y=%2, W=%3, H=%4",
+            "Область (физические пиксели экрана): X=%1, Y=%2, Ш=%3, В=%4")
+            .arg(screenCaptureX_->value()).arg(screenCaptureY_->value())
+            .arg(screenCaptureWidth_->value()).arg(screenCaptureHeight_->value()));
+    }
+
+    void beginCropSelection() {
+        QScreen *primary = QGuiApplication::primaryScreen();
+        if (!primary) {
+            if (screenReaderStatusLabel_) screenReaderStatusLabel_->setText(
+                bspvision::uiText("No display is available for selection.", "Нет доступного экрана для выделения."));
+            return;
+        }
+        if (screenCaptureTimer_) screenCaptureTimer_->stop();
+        screenReader_.stop();
+
+        auto *selector = new ScreenRegionSelector(primary, this);
+        cropSelector_ = selector;
+        selector->regionSelected = [this](const QRect &region) {
+            cropSelector_ = nullptr;
+            if (screenCaptureX_) screenCaptureX_->setValue(region.x());
+            if (screenCaptureY_) screenCaptureY_->setValue(region.y());
+            if (screenCaptureWidth_) screenCaptureWidth_->setValue(region.width());
+            if (screenCaptureHeight_) screenCaptureHeight_->setValue(region.height());
+            updateCropRegionLabel();
+            statusBar()->showMessage(bspvision::uiText(
+                "Crop selected. Starting cl_showpos template matching.",
+                "Область выделена. Запускаю распознавание cl_showpos."));
+            if (screenReaderEnabledCheck_ && !screenReaderEnabledCheck_->isChecked())
+                screenReaderEnabledCheck_->setChecked(true);
+            else
+                startClShowPosReader();
+        };
+        selector->canceled = [this] {
+            cropSelector_ = nullptr;
+            if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked())
+                startClShowPosReader();
+        };
+        selector->show();
+        selector->raise();
+        selector->activateWindow();
+        selector->setFocus(Qt::OtherFocusReason);
+    }
+
     void startClShowPosReader() {
         if (screenReaderEnabledCheck_ && !screenReaderEnabledCheck_->isChecked()) {
             screenReaderEnabledCheck_->setChecked(true);
@@ -766,12 +930,10 @@ private:
         bspvision::ClShowPosSample sample;
         QString status;
         if (screenReader_.poll(&sample, &status)) {
-            if (!bridgeConnected_) {
-                if (currentYawInit_) currentYawInit_->setValue(sample.angles.y());
-                if (currentPitchInit_) currentPitchInit_->setValue(sample.angles.x());
-            }
+            if (currentYawInit_) currentYawInit_->setValue(sample.angles.y());
+            if (currentPitchInit_) currentPitchInit_->setValue(sample.angles.x());
             if (useScreenPositionButton_) useScreenPositionButton_->setEnabled(true);
-            if (liveTelemetryLabel_ && !bridgeConnected_) {
+            if (liveTelemetryLabel_) {
                 liveTelemetryLabel_->setText(
                     QStringLiteral("cl_showpos · pos (%1, %2, %3) · ang p/y/r (%4, %5, %6) · confidence %7%")
                     .arg(sample.position.x(), 0, 'f', 2)
@@ -924,8 +1086,8 @@ private:
             if (targetDefined_)
                 summary += bspvision::uiText(" Ideal endpoint error: %1 units.", " Ошибка в конечной точке: %1 ед.").arg(miss, 0, 'f', 1);
         }
-        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. Native Bridge provides live camera data when available.",
-                                     " Зелёный = запуск, красный = цель, янтарный = траектория. Native Bridge передаёт данные камеры при доступности.");
+        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. Live angles come from the cl_showpos screen reader.",
+                                     " Зелёный = запуск, красный = цель, янтарный = траектория. Текущие углы берутся из экранного чтения cl_showpos.");
         ballisticsSummary_->setText(summary);
         syncOverlay();
     }
@@ -942,73 +1104,29 @@ private:
         syncOverlay();
     }
 
-    void readBridgeMessages() {
-        if (!bridgeSocket_) return;
-        while (bridgeSocket_->canReadLine()) {
-            const auto doc = QJsonDocument::fromJson(bridgeSocket_->readLine().trimmed());
-            if (!doc.isObject()) continue;
-            const auto msg = doc.object();
-            if (msg.value("type").toString() != "telemetry") continue;
-            bridgeTelemetry_ = msg;
-            const auto player = msg.value("player").toObject();
-            const auto angles = player.value("eye_angles").toObject();
-            if (!angles.isEmpty()) {
-                if (currentYawInit_) currentYawInit_->setValue(angles.value("yaw").toDouble());
-                if (currentPitchInit_) currentPitchInit_->setValue(angles.value("pitch").toDouble());
-            }
-            const auto pos = player.value("position").toObject();
-            if (!pos.isEmpty() && !bridgePositionInitialized_ && originX_ && originY_ && originZ_) {
-                bridgePositionInitialized_ = true;
-                originX_->setValue(pos.value("x").toDouble());
-                originY_->setValue(pos.value("y").toDouble());
-                originZ_->setValue(pos.value("z").toDouble());
-            }
-            const auto lvs = msg.value("lvs").toObject();
-            if (liveTelemetryLabel_) liveTelemetryLabel_->setText(
-                QString("LVS: %1 · handler: %2").arg(
-                    lvs.value("vehicle_class").toString("not detected"),
-                    lvs.value("weapon_handler_class").toString("not detected")));
-        }
-        syncOverlay();
-    }
-
     void syncOverlay() {
         if (!overlay_) return;
-        double cy = currentYawInit_ ? currentYawInit_->value() : 0.0;
-        double cp = currentPitchInit_ ? currentPitchInit_->value() : 0.0;
-        const auto player = bridgeTelemetry_.value("player").toObject();
-        const auto angles = player.value("eye_angles").toObject();
-        if (!angles.isEmpty()) { cy = angles.value("yaw").toDouble(cy); cp = angles.value("pitch").toDouble(cp); }
+        const double cy = currentYawInit_ ? currentYawInit_->value() : 0.0;
+        const double cp = currentPitchInit_ ? currentPitchInit_->value() : 0.0;
         overlay_->setCurrentAngles(cy, cp);
         overlay_->setDesiredAngles(yaw_ ? yaw_->value() : 0.0, pitch_ ? -pitch_->value() : 0.0);
         overlay_->setHorizontalFov(overlayFov_ ? overlayFov_->value() : 90.0);
-        const double range = originX_ && targetX_ ? std::hypot(targetX_->value()-originX_->value(), targetY_->value()-originY_->value()) : 0.0;
+        const double range = originX_ && targetX_
+            ? std::hypot(targetX_->value() - originX_->value(), targetY_->value() - originY_->value()) : 0.0;
         overlay_->setTargetDetails(range, flightTime_ ? flightTime_->value() : 0.0, loadedMapName_);
         const bool enabled = targetDefined_ && trajectoryCalculated_;
         overlay_->setTargetEnabled(enabled);
+
         QString state;
-        if (bridgeConnected_) {
-            state = QStringLiteral("Native bridge connected");
-        } else if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked()) {
+        if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked()) {
             bspvision::ClShowPosSample sample;
             state = screenReader_.latestSample(&sample)
-                ? QStringLiteral("Screen telemetry active (cl_showpos)")
+                ? QStringLiteral("cl_showpos active · %1% match").arg(qRound(sample.confidence * 100.0))
                 : screenReader_.lastStatus();
         } else {
-            state = QStringLiteral("Waiting for Native Bridge or cl_showpos fallback");
+            state = QStringLiteral("cl_showpos reader stopped");
         }
         if (liveStatusLabel_) liveStatusLabel_->setText(state);
-        if (bridgeSocket_ && bridgeSocket_->state() == QLocalSocket::ConnectedState
-            && QDateTime::currentMSecsSinceEpoch() - lastBridgeCommandMs_ >= 100) {
-            lastBridgeCommandMs_ = QDateTime::currentMSecsSinceEpoch();
-            QJsonObject cmd;
-            cmd.insert(QStringLiteral("type"), QStringLiteral("target"));
-            cmd.insert(QStringLiteral("enabled"), enabled);
-            cmd.insert(QStringLiteral("yaw"), yaw_ ? yaw_->value() : 0.0);
-            cmd.insert(QStringLiteral("pitch"), pitch_ ? -pitch_->value() : 0.0);
-            bridgeSocket_->write(QJsonDocument(cmd).toJson(QJsonDocument::Compact) + "\n");
-            bridgeSocket_->flush();
-        }
         overlay_->setTrackingStatus(state);
     }
 
@@ -1061,6 +1179,7 @@ private:
     QDoubleSpinBox *speed_ = nullptr, *gravity_ = nullptr, *yaw_ = nullptr, *pitch_ = nullptr, *flightTime_ = nullptr;
     QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
     QLabel *screenReaderStatusLabel_ = nullptr;
+    QLabel *cropRegionLabel_ = nullptr;
     QCheckBox *screenReaderEnabledCheck_ = nullptr;
     QSpinBox *screenCaptureX_ = nullptr, *screenCaptureY_ = nullptr;
     QSpinBox *screenCaptureWidth_ = nullptr, *screenCaptureHeight_ = nullptr;
@@ -1069,6 +1188,7 @@ private:
     QDoubleSpinBox *overlayFov_ = nullptr;
     QTimer *overlayTimer_ = nullptr;
     QTimer *screenCaptureTimer_ = nullptr;
+    ScreenRegionSelector *cropSelector_ = nullptr;
     bspvision::ClShowPosReader screenReader_;
     bspvision::Heightfield heightfield_;
     bspvision::TriangleBvh collisionBvh_;
@@ -1076,12 +1196,6 @@ private:
     bool collisionBvhAttempted_ = false;
     QString collisionBvhError_;
     bspvision::LiveOverlay *overlay_ = nullptr;
-    QLocalServer *bridgeServer_ = nullptr;
-    QLocalSocket *bridgeSocket_ = nullptr;
-    QJsonObject bridgeTelemetry_;
-    bool bridgeConnected_ = false;
-    bool bridgePositionInitialized_ = false;
-    qint64 lastBridgeCommandMs_ = 0;
     QString loadedMapName_;
     int pickMode_ = 0;
     bool targetDefined_ = false;
