@@ -11,16 +11,15 @@ Bilingual Windows desktop tool for inspecting Source Engine BSP v20 geometry and
 - Select X/Y coordinates by clicking the map. Enter Z manually to choose the correct floor.
 - Plan a projectile path in XY, XZ and oblique 3D views, and solve for low or high ideal ballistic arcs.
 - Run synthetic BSP parser tests with CTest.
-- Native SBGL Bridge integration: local named-pipe telemetry from a GMod binary Lua module, with in-game HUD marker commands. See [native bridge build and setup](../gmod-addon/native-bridge/README.md).
 - Optional Tier B screen telemetry from `cl_showpos`: DXGI Desktop Duplication capture plus pixel-template matching, with crop controls, range checks and a confidence score. No OCR engine or neural-network model is used.
 - On-demand displacement-aware two-layer heightfield (`ground`/`canopy`), hillshade and cached 128/256-unit contour lines in the 2D preview.
 - A median-split triangle BVH clips calculated trajectories at the first BSP render-surface intersection, with a material/time diagnostic.
 
 ## Limitations
 
-Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics. The heightfield and hillshade are analysis layers only. The trajectory BVH also tests render triangles only; neither it nor the heightfield is a complete Source collision/visibility model. The native bridge reports camera/player telemetry exposed through the client Lua API and best-effort LVS weapon-handler data. Custom vehicle camera and barrel direction still vary by LVS addon. The binary module is source-only and must be built for the installed GMod client architecture.
+Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics. The heightfield and hillshade are analysis layers only. The trajectory BVH also tests render triangles only; neither it nor the heightfield is a complete Source collision/visibility model. The live tracking path is screen-only and reads the visible `cl_showpos` text. It does not load any in-game module or use a local named pipe.
   
-The `cl_showpos` reader is an experimental fallback, not yet verified against a live GMod screenshot. It currently captures a configurable crop from the primary monitor and searches for locally rendered fixed-width font templates. Font rasterization, game resolution, UI scale and a bright scene behind the text can reduce recognition confidence; invalid or low-confidence samples are rejected. The displayed `pos` is Source's view origin, not a guaranteed muzzle position.
+The `cl_showpos` reader is experimental. Click **Select crop with mouse**, then drag a rectangle around the visible `pos:` and `ang:` rows; the coordinates and dimensions are saved. The selection is converted to physical display pixels and targets the primary display. Windowed or borderless game mode is recommended. Font rasterization, game resolution, UI scale and a bright scene behind the text can reduce recognition confidence; invalid or low-confidence samples are rejected. The displayed `pos` is Source's view origin, not a guaranteed muzzle position.
 
 ## Build on Windows
 
@@ -41,9 +40,9 @@ ctest --test-dir build -C Release --output-on-failure
 1. Launch `bsp-geometry.exe`.
 2. Open **BSP geometry / Геометрия BSP** and choose **Load Source BSP v20… / Загрузить Source BSP v20…**.
 3. Leave **Show skybox surfaces / Показывать поверхности скайбокса** unchecked first. Enable it only to inspect those faces.
-4. Use **Top-down XY / Сверху XY** to select horizontal coordinates, or **Orbit 3D / 3D-орбита** to rotate with the left mouse button and zoom with the wheel.
+4. Use **Top-down XY / Сверху XY** to select horizontal coordinates, or **Orbit 3D / 3D-орбита** to rotate with the left mouse button, zoom with the wheel, and double-click to reset the camera.
 5. Open **Ballistic lab / Баллистика**, enter/select the target coordinates, then calculate the current arc or solve for the low/high arc. The Z coordinate must be entered manually.
-6. For live telemetry, the preferred route is [Native Bridge](../gmod-addon/native-bridge/README.md): build/install the module and Lua adapter, restart GMod, then launch the Viewer. The bridge connects automatically when permitted. Its in-game marker is a visual reference; it does not control input or firing.
-7. If local Lua is unavailable but `cl_showpos` is visible, expand **Screen fallback · cl_showpos**, enable the DXGI template reader, and adjust X/Y/width/height so the crop includes the `pos:` and `ang:` rows (and ideally `vel:`). The crop is relative to the primary display in screen pixels. Use **Apply crop / start** after changing it. Inspect confidence and coordinates; use **Use last pos as launch point** only after checking the view-origin/muzzle offset. The reader is an experimental first implementation and has not yet been tested against an in-game capture.
+6. For live telemetry, enable `cl_showpos 1`, click **Select crop with mouse** in the Viewer, and select the visible telemetry rows. The external desktop overlay uses only the angles decoded from this screen crop.
+7. If needed, adjust X/Y/width/height manually after selection. Inspect confidence and coordinates; use **Use last pos as launch point** only after checking the view-origin/muzzle offset.
 
 For the detailed Russian/English user manual, see `docs/USER_MANUAL.md`.
