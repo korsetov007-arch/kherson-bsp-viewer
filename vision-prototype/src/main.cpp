@@ -1428,6 +1428,9 @@ private:
         autoAimEnabled_ = false;
         autoAimStage_ = AutoAimStage::Disabled;
         autoAimStatus_ = reason;
+        transientAutoAimStatusUntilMs_ = QDateTime::currentMSecsSinceEpoch() + 7000;
+        if (overlay_ && !overlay_->isVisible()) startExternalOverlay();
+        updateOverlayGeometry();
         syncOverlay();
     }
 
@@ -1543,8 +1546,8 @@ private:
                     autoAimProbeWaitTicks_ = 0;
                 } else {
                     stopAutoAim(bspvision::uiText(
-                        "MOUSE INPUT NOT REACHING GMod · SendInput was sent but cl_showpos yaw did not change. GMod m_rawinput 1 may ignore synthetic mouse input; open the game console, run m_rawinput 0, then press F7 again. Also run this app at the same privilege level as the game.",
-                        "МЫШЬ НЕ УПРАВЛЯЕТ GMod · SendInput отправлен, но yaw в cl_showpos не изменился. При m_rawinput 1 игра может игнорировать синтетическую мышь: откройте консоль GMod, выполните m_rawinput 0 и снова нажмите F7. Также запустите программу с теми же правами, что и игру."));
+                        "MOUSE INPUT BLOCKED · GMod m_rawinput 1 may ignore SendInput. Run m_rawinput 0 in the game console, then press F7 again.",
+                        "ВВОД МЫШИ НЕ ПРОХОДИТ · GMod при m_rawinput 1 может игнорировать SendInput. Выполните в консоли m_rawinput 0 и снова нажмите F7."));
                     return;
                 }
             }
@@ -1581,8 +1584,8 @@ private:
                     autoAimProbeWaitTicks_ = 0;
                 } else {
                     stopAutoAim(bspvision::uiText(
-                        "MOUSE INPUT NOT REACHING GMod · SendInput was sent but cl_showpos pitch did not change. GMod m_rawinput 1 may ignore synthetic mouse input; open the game console, run m_rawinput 0, then press F7 again. Also run this app at the same privilege level as the game.",
-                        "МЫШЬ НЕ УПРАВЛЯЕТ GMod · SendInput отправлен, но pitch в cl_showpos не изменился. При m_rawinput 1 игра может игнорировать синтетическую мышь: откройте консоль GMod, выполните m_rawinput 0 и снова нажмите F7. Также запустите программу с теми же правами, что и игру."));
+                        "MOUSE INPUT BLOCKED · GMod m_rawinput 1 may ignore SendInput. Run m_rawinput 0 in the game console, then press F7 again.",
+                        "ВВОД МЫШИ НЕ ПРОХОДИТ · GMod при m_rawinput 1 может игнорировать SendInput. Выполните в консоли m_rawinput 0 и снова нажмите F7."));
                     return;
                 }
             }
@@ -1734,7 +1737,7 @@ private:
 
     static constexpr int AutoAimHotkeyId = 0xB570;
     bool f7WasDown_ = false;
-    ULONGLONG lastF7ToggleTimeMs_ = 0;
+    quint64 lastF7ToggleTimeMs_ = 0;
     qint64 transientAutoAimStatusUntilMs_ = 0;
     AutoAimStage autoAimStage_ = AutoAimStage::Disabled;
     bool autoAimEnabled_ = false;
