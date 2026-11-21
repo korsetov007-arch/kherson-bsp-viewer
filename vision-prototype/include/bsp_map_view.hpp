@@ -3,6 +3,7 @@
 #include "bsp_file.hpp"
 
 #include <QPointF>
+#include <QRectF>
 #include <QWidget>
 
 #include <functional>
