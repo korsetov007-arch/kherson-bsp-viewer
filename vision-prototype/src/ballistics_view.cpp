@@ -159,7 +159,8 @@ void BallisticsView::paintEvent(QPaintEvent *event) {
             p.drawPolyline(path);
             p.setPen(Qt::NoPen);
             p.setBrush(QColor(255, 190, 75));
-            for (int i = 4; i < trajectory_.size() - 1; i += std::max(1, trajectory_.size() / 12))
+            for (qsizetype i = 4; i < trajectory_.size() - 1;
+                 i += std::max<qsizetype>(1, trajectory_.size() / 12))
                 p.drawEllipse(project(trajectory_[i], plot, b, mode), 2.8, 2.8);
         }
 
