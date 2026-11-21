@@ -7,6 +7,7 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 namespace bspvision {
@@ -327,7 +328,7 @@ bool BspFile::load(const QString &path, QString *error) {
             return false;
         }
 
-        if (faceIndex >= static_cast<quint16>(faces_.size())) continue;
+        if (static_cast<quint32>(faceIndex) >= static_cast<quint32>(faces_.size())) continue;
         const BspFace &baseFace = faces_[faceIndex];
         if (baseFace.displacementInfo != dispIndex || baseFace.edgeCount != 4) continue;
 
