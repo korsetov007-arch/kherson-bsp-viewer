@@ -69,6 +69,13 @@ public:
     int skyFaceCount() const;
     int displacementCount() const { return displacementCount_; }
     int displacementTriangleCount() const { return displacementTriangleCount_; }
+    int displacementVertexCount() const { return displacementVertexCount_; }
+    int displacementTriangleRecordCount() const { return displacementTriangleRecordCount_; }
+    int displacementTriangleSurfaceTagCount() const { return displacementTriangleSurfaceTagCount_; }
+    int displacementTriangleZeroTagCount() const { return displacementTriangleZeroTagCount_; }
+    int displacementTriangleRemovedCount() const { return displacementTriangleRemovedCount_; }
+    int displacementFallbackSurfaceCount() const { return displacementFallbackSurfaceCount_; }
+    const std::array<int, 3> &displacementPowerCounts() const { return displacementPowerCounts_; }
     QString summary() const;
 
 private:
@@ -85,6 +92,13 @@ private:
     QVector<quint8> displacementFacePresent_;
     int displacementCount_ = 0;
     int displacementTriangleCount_ = 0;
+    int displacementVertexCount_ = 0;
+    int displacementTriangleRecordCount_ = 0;
+    int displacementTriangleSurfaceTagCount_ = 0;
+    int displacementTriangleZeroTagCount_ = 0;
+    int displacementTriangleRemovedCount_ = 0;
+    int displacementFallbackSurfaceCount_ = 0;
+    std::array<int, 3> displacementPowerCounts_{};
 };
 
 } // namespace bspvision
