@@ -5,7 +5,9 @@
 #include <QTemporaryDir>
 #include <QtEndian>
 
+#include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 
