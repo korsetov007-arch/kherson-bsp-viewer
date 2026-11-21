@@ -1,6 +1,6 @@
 # Source BSP Geometry Lab — user manual / руководство пользователя
 
-> Version note: this manual describes the native Qt desktop application. It supports Source BSP v20 and includes an optional external mouse-based overlay. The overlay setup is documented separately in [EXTERNAL_OVERLAY_RU_EN.md](EXTERNAL_OVERLAY_RU_EN.md); it estimates view angles from raw mouse deltas rather than reading internal game telemetry.
+> Version note: this manual describes the native Qt desktop application and its optional SBGL native bridge. The bridge receives telemetry through a local Windows named pipe and can request an in-game HUD marker. Setup and compatibility limitations are documented in [the native bridge guide](../gmod-addon/native-bridge/README.md).
 
 # Русский
 
