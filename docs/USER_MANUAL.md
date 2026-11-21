@@ -141,3 +141,18 @@ On the BSP Geometry tab, enable **Hillshade heightfield** to rasterize map trian
 The first implementation uses 16 Source units per cell (for large maps, the cell size automatically increases so no dimension exceeds 2048 cells). It is a visualization and preliminary analysis layer, not a complete Source collision model: vertical surfaces, enclosed multi-level spaces, some face orientations, and dynamic/static props are not fully represented. Do not treat it as proof of walkability or exact line-of-sight.
 
 The cache resets when a new map is loaded; rasterization starts only when the checkbox is enabled.
+
+
+## Проверка траектории на поверхности BSP / BSP surface trace
+
+### Русский
+
+После загрузки карты первый расчёт траектории лениво строит BVH по треугольникам поверхностей BSP (включая реконструированные displacement-треугольники и исключая sky). При пересечении траектория обрезается в первой найденной точке, а сводка показывает координаты, время и материал поверхности. При отсутствии пересечения показывается, что проверенные треугольники поверхности не перекрывают траекторию.
+
+Важно: это быстрый тест по render-поверхностям BSP, а не точная коллизия движка. В него не входят модели пропов, специальные объёмы столкновений, все brush-solid семантики и серверные изменения. Отсутствие пересечения означает только отсутствие попадания в построенный треугольный набор.
+
+### English
+
+After a map is loaded, the first trajectory calculation lazily builds a BVH over BSP surface triangles (including reconstructed displacement triangles and excluding sky). If the path intersects a triangle, the rendered trajectory is clipped at the first hit and the summary reports position, time and surface material. If no intersection is found, the UI reports that the tested surface triangles do not block the path.
+
+Important: this is a fast test against BSP render surfaces, not exact engine collision. Prop models, special collision volumes, all brush-solid semantics and server-side changes are not included. A clear trace only means the generated triangle set did not intersect the path.
