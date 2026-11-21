@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QString>
 #include <QVector>
 
 #include <array>
@@ -25,10 +26,14 @@ struct BspFace {
     qint16 edgeCount = 0;
     qint16 textureInfo = -1;
     qint16 displacementInfo = -1;
+    QString materialName;
+    bool skySurface = false;
 };
 
 struct BspPolygon {
     QVector<BspVertex> vertices;
+    QString materialName;
+    bool skySurface = false;
 };
 
 struct BspLumpInfo {
@@ -61,7 +66,8 @@ public:
     const QVector<BspFace> &faces() const { return faces_; }
     const std::array<BspLumpInfo, LumpCount> &lumps() const { return lumps_; }
 
-    QVector<BspPolygon> facePolygons() const;
+    QVector<BspPolygon> facePolygons(bool includeSkySurfaces = false) const;
+    int skyFaceCount() const;
     QString summary() const;
 
 private:
