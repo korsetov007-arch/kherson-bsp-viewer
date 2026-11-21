@@ -1,6 +1,6 @@
 # Source BSP Geometry Lab — user manual / руководство пользователя
 
-> Version note: live telemetry is read exclusively from the visible `cl_showpos` screen text. No SBGL Bridge, in-game Lua module, or named pipe is used.
+> Version note: live telemetry is decoded exclusively from the visible `cl_showpos` screen text. No game-side component is required.
 
 # Русский
 
