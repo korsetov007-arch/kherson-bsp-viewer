@@ -346,6 +346,7 @@ private:
         screenReaderStatusLabel_ = nullptr;
         cropRegionLabel_ = nullptr;
         screenReaderEnabledCheck_ = nullptr;
+        targetWindowCombo_ = nullptr;
         screenCaptureX_ = screenCaptureY_ = screenCaptureWidth_ = screenCaptureHeight_ = nullptr;
         useScreenPositionButton_ = nullptr;
         showSkyboxCheck_ = nullptr;
@@ -705,6 +706,19 @@ private:
         QScreen *primary = QGuiApplication::primaryScreen();
         const QSize primarySize = primary ? primary->size() : QSize(1920, 1080);
 
+        auto *targetWindowRow = new QHBoxLayout();
+        targetWindowCombo_ = new QComboBox(screenGroup);
+        targetWindowCombo_->setMinimumWidth(260);
+        auto *refreshWindowsButton = new QPushButton(
+            bspvision::uiText("Refresh windows", "Обновить окна"), screenGroup);
+        targetWindowRow->addWidget(new QLabel(
+            bspvision::uiText("F7 target window", "Окно для F7"), screenGroup));
+        targetWindowRow->addWidget(targetWindowCombo_, 1);
+        targetWindowRow->addWidget(refreshWindowsButton);
+        screenLayout->addLayout(targetWindowRow);
+        populateTargetWindows();
+        connect(refreshWindowsButton, &QPushButton::clicked, this, [this] { populateTargetWindows(); });
+
         screenReaderEnabledCheck_ = new QCheckBox(
             bspvision::uiText("Enable screen reader", "Включить чтение с экрана"), screenGroup);
         screenReaderEnabledCheck_->setChecked(screenSettings.value(QStringLiteral("clShowPos/enabled"), false).toBool());
@@ -751,8 +765,8 @@ private:
 
         screenReaderStatusLabel_ = new QLabel(
             bspvision::uiText(
-                "Enable cl_showpos 1 and drag a rectangle around the visible pos:/ang: rows (vel: is optional). Select again any time to adjust the crop. Borderless/windowed game mode works best.",
-                "Включите cl_showpos 1 и выделите рамкой видимые строки pos:/ang: (vel: необязательна). Выделять заново можно в любой момент. Лучше работает оконный режим или безрамочное окно."), screenGroup);
+                "Select the target window, bring it to the foreground, enable cl_showpos 1, then select the pos:/ang: crop. F7 controls only the selected foreground window. The selected window must display compatible pos:/ang: telemetry; other apps will not provide Source coordinates by themselves.",
+                "Выберите окно, выведите его на передний план, включите cl_showpos 1 и выделите строки pos:/ang:. F7 управляет только выбранным активным окном. В выбранном окне должны отображаться совместимые координаты pos:/ang:; другие программы сами по себе телеметрию Source не предоставляют."), screenGroup);
         screenReaderStatusLabel_->setWordWrap(true);
         screenLayout->addWidget(screenReaderStatusLabel_);
 
@@ -1279,26 +1293,59 @@ private:
         return delta - 180.0;
     }
 
-    bool isGarrysModForeground() const {
+    HWND selectedTargetWindow() const {
 #if defined(Q_OS_WIN)
+        if (!targetWindowCombo_) return nullptr;
+        const quintptr raw = static_cast<quintptr>(targetWindowCombo_->currentData().toULongLong());
+        return reinterpret_cast<HWND>(raw);
+#else
+        return nullptr;
+#endif
+    }
+
+    void populateTargetWindows() {
+#if defined(Q_OS_WIN)
+        if (!targetWindowCombo_) return;
+        const HWND previous = selectedTargetWindow();
+        targetWindowCombo_->clear();
+        targetWindowCombo_->addItem(bspvision::uiText("Select a window…", "Выберите окно…"),
+                                    QVariant::fromValue<qulonglong>(0));
+        struct EnumContext { QComboBox *combo; DWORD ownPid; };
+        EnumContext context{targetWindowCombo_, GetCurrentProcessId()};
+        EnumWindows([](HWND hwnd, LPARAM parameter) -> BOOL {
+            auto *ctx = reinterpret_cast<EnumContext *>(parameter);
+            if (!ctx || !IsWindowVisible(hwnd)) return TRUE;
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+            if (!pid || pid == ctx->ownPid) return TRUE;
+            const int length = GetWindowTextLengthW(hwnd);
+            if (length <= 0) return TRUE;
+            std::wstring title(static_cast<size_t>(length) + 1, L'\\0');
+            const int copied = GetWindowTextW(hwnd, title.data(), length + 1);
+            if (copied <= 0) return TRUE;
+            title.resize(static_cast<size_t>(copied));
+            ctx->combo->addItem(QString::fromStdWString(title),
+                QVariant::fromValue<qulonglong>(static_cast<qulonglong>(reinterpret_cast<quintptr>(hwnd))));
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&context));
+        const quintptr previousRaw = reinterpret_cast<quintptr>(previous);
+        for (int i = 1; i < targetWindowCombo_->count(); ++i) {
+            if (static_cast<quintptr>(targetWindowCombo_->itemData(i).toULongLong()) == previousRaw) {
+                targetWindowCombo_->setCurrentIndex(i);
+                break;
+            }
+        }
+#endif
+    }
+
+    bool isSelectedTargetForeground() const {
+#if defined(Q_OS_WIN)
+        const HWND target = selectedTargetWindow();
         const HWND foreground = GetForegroundWindow();
-        if (!foreground) return false;
-        DWORD processId = 0;
-        GetWindowThreadProcessId(foreground, &processId);
-        if (!processId) return false;
-        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
-        if (!process) return false;
-        wchar_t imagePath[32768] = {};
-        DWORD pathLength = static_cast<DWORD>(sizeof(imagePath) / sizeof(imagePath[0]));
-        const BOOL ok = QueryFullProcessImageNameW(process, 0, imagePath, &pathLength);
-        CloseHandle(process);
-        if (!ok) return false;
-        const QString executable =
-            QFileInfo(QString::fromWCharArray(imagePath, static_cast<qsizetype>(pathLength))).fileName();
-        // Current Windows installs can run either the classic client or the
-        // newer 64-bit executable introduced for the Windows client.
-        return executable.compare(QStringLiteral("gmod.exe"), Qt::CaseInsensitive) == 0 ||
-               executable.compare(QStringLiteral("gmod_win64.exe"), Qt::CaseInsensitive) == 0;
+        if (!target || !foreground) return false;
+        const HWND targetRoot = GetAncestor(target, GA_ROOT);
+        const HWND foregroundRoot = GetAncestor(foreground, GA_ROOT);
+        return target == foreground || (targetRoot && targetRoot == foregroundRoot);
 #else
         return false;
 #endif
@@ -1347,10 +1394,10 @@ private:
             return;
         }
 #if defined(Q_OS_WIN)
-        if (!isGarrysModForeground()) {
+        if (!isSelectedTargetForeground()) {
             statusBar()->showMessage(bspvision::uiText(
-                "Focus the Garry's Mod game window before enabling auto aim.",
-                "Перед включением автодоводки переключитесь на окно Garry's Mod."));
+                "Select a target window and bring it to the foreground before enabling auto aim.",
+                "Выберите целевое окно и выведите его на передний план перед включением автодоводки."));
             return;
         }
         if (!screenReader_.isRunning()) startClShowPosReader();
@@ -1384,10 +1431,10 @@ private:
     void processAutoAimSample(const bspvision::ClShowPosSample &sample) {
         if (!autoAimEnabled_ || !yaw_ || !pitch_) return;
 #if defined(Q_OS_WIN)
-        if (!isGarrysModForeground()) {
+        if (!isSelectedTargetForeground()) {
             autoAimStatus_ = bspvision::uiText(
-                "AUTO AIM PAUSED · Garry's Mod is not foreground",
-                "АВТОСУО ПАУЗА · окно Garry's Mod неактивно");
+                "AUTO AIM PAUSED · selected window is not foreground",
+                "АВТОСУО ПАУЗА · выбранное окно не активно");
             return; // Never inject mouse input into another application.
         }
         if (sample.confidence < 0.72) {
@@ -1618,6 +1665,7 @@ private:
     QLabel *screenReaderStatusLabel_ = nullptr;
     QLabel *cropRegionLabel_ = nullptr;
     QCheckBox *screenReaderEnabledCheck_ = nullptr;
+    QComboBox *targetWindowCombo_ = nullptr;
     QSpinBox *screenCaptureX_ = nullptr, *screenCaptureY_ = nullptr;
     QSpinBox *screenCaptureWidth_ = nullptr, *screenCaptureHeight_ = nullptr;
     QPushButton *useScreenPositionButton_ = nullptr;
