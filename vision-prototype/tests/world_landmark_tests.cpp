@@ -56,6 +56,14 @@ int main() {
         0.0, 0.0, 90.0, viewport, &point),
         "A point behind the camera was incorrectly projected.");
 
+    // Moving the camera sideways moves the same world landmark in the opposite direction.
+    ok &= check(bspvision::projectWorldPointToScreen(
+        QVector3D(100, 0, 0), QVector3D(0, 10, 0),
+        0.0, 0.0, 90.0, viewport, &point),
+        "Landmark after camera translation was not projected.");
+    ok &= check(point.x() > 960.0,
+        "Camera translation did not shift the landmark relative to the viewport.");
+
     ok &= check(!bspvision::projectWorldPointToScreen(
         QVector3D(100, 0, 0), QVector3D(0, 0, 0),
         0.0, 0.0, 90.0, QSize(0, 1080), &point),
