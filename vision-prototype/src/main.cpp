@@ -298,6 +298,7 @@ private:
                 QMessageBox::warning(this, bspvision::uiText("BSP load failed", "Ошибка загрузки BSP"), error);
                 return;
             }
+            loadedMapName_ = QFileInfo(path).completeBaseName();
             if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
             refreshMapViews();
             statusBar()->showMessage(bspvision::uiText("Loaded BSP: %1", "Загружена карта BSP: %1")
@@ -645,7 +646,15 @@ private:
             .arg(liveX_, 0, 'f', 1).arg(liveY_, 0, 'f', 1).arg(liveZ_, 0, 'f', 1)
             .arg(liveYaw_, 0, 'f', 1).arg(livePitch_, 0, 'f', 1);
 
-        if (!targetDefined_) {
+        if (loadedMapName_.isEmpty() ||
+            liveMapName_.compare(loadedMapName_, Qt::CaseInsensitive) != 0) {
+            liveStatusMessage_ = bspvision::uiText(
+                "Connected, but the loaded BSP must match the current game map. BSP: %1 · game: %2",
+                "Подключено, но загруженная BSP-карта должна совпадать с текущей картой игры. BSP: %1 · игра: %2")
+                .arg(loadedMapName_.isEmpty() ? QStringLiteral("—") : loadedMapName_)
+                .arg(liveMapName_.isEmpty() ? QStringLiteral("—") : liveMapName_);
+            writeAimState(false, QStringLiteral("BSP/game map mismatch"));
+        } else if (!targetDefined_) {
             liveStatusMessage_ = bspvision::uiText(
                 "Connected. Choose a target on the BSP map, set its Z height, then solve for a low/high arc.",
                 "Подключено. Выберите цель на BSP-карте, задайте её высоту Z и рассчитайте низкую/высокую дугу.");
@@ -765,6 +774,7 @@ private:
     QString liveStatusMessage_;
     QString liveTelemetryMessage_;
     QString liveMapName_;
+    QString loadedMapName_;
     bool liveConnected_ = false;
     bool highArcSelected_ = false;
     double liveX_ = 0.0, liveY_ = 0.0, liveZ_ = 0.0;
