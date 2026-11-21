@@ -1,6 +1,7 @@
 #include "bsp_file.hpp"
 #include "bsp_map_view.hpp"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -16,6 +17,7 @@
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QStringList>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QWidget>
