@@ -63,6 +63,7 @@ jobs:
           $windeployqt = Join-Path $env:QT_ROOT_DIR "bin/windeployqt.exe"
           & $windeployqt --release --no-translations $exePath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
