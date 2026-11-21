@@ -2,6 +2,8 @@
 
 #include <QWidget>
 #include <QRect>
+#include <QElapsedTimer>
+#include <QPointF>
 #include <QString>
 #include <QVector3D>
 
@@ -41,6 +43,9 @@ private:
     QVector3D cameraPosition_;
     double landmarkYaw_ = 0.0;
     double landmarkPitch_ = 0.0;
+    QPointF smoothedLandmarkScreen_;
+    bool hasSmoothedLandmarkScreen_ = false;
+    QElapsedTimer landmarkSmoothingClock_;
 };
 
 } // namespace bspvision
