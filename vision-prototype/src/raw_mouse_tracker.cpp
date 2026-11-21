@@ -61,8 +61,8 @@ void RawMouseTracker::stop() {
 
 void RawMouseTracker::setCalibration(double sensitivity, double mYaw, double mPitch) {
     sensitivity_ = std::clamp(sensitivity, 0.01, 100.0);
-    mYaw_ = std::clamp(mYaw, 0.0001, 10.0);
-    mPitch_ = std::clamp(mPitch, 0.0001, 10.0);
+    mYaw_ = std::clamp(mYaw, -10.0, 10.0);
+    mPitch_ = std::clamp(mPitch, -10.0, 10.0);
 }
 
 bool RawMouseTracker::isGModForeground() {
