@@ -9,7 +9,7 @@
 - Skybox-material detection with a toggle to show/hide sky-textured faces.
 - Russian/English interface with a persistent language setting.
 - Offline projectile-trajectory visualization with low/high ballistic-angle solving.
-- Optional Native Bridge for Garry's Mod, plus an experimental Tier B `cl_showpos` fallback using DXGI screen capture and classic pixel-template matching.
+- Screen-only `cl_showpos` telemetry using DXGI Desktop Duplication and classic pixel-template matching; select the crop by dragging a rectangle over the game screen.
 - On-demand two-layer terrain heightfield (`ground`/`canopy`), hillshade, and cached 128/256-unit contour lines for the 2D map.
 - Median-split triangle BVH for approximate trajectory/surface intersection checks against BSP render triangles.
 - No OpenCV, OCR engine or neural-network model is required for the native desktop app.
@@ -28,7 +28,7 @@ Open [index.html](index.html) in a modern browser and select a local `.bsp` file
 
 ## Live overlay / Оверлей в игре
 
-The native bridge source and setup are documented in [gmod-addon/native-bridge/README.md](gmod-addon/native-bridge/README.md). Run [the Windows installer](gmod-addon/install-sbgl-bridge.bat) to auto-detect the Steam install, build the native module, and copy the module + Lua adapter. The Qt app communicates through a local Windows named pipe. A compatible client must allow local client Lua and binary modules; this cannot override server restrictions. The end-to-end source is not yet compiled or verified in-game.
+The telemetry path is exclusively screen-based: enable `cl_showpos 1` in Garry's Mod, launch the desktop Viewer, click **Select crop with mouse**, and drag a rectangle around the visible `pos:` and `ang:` lines (include `vel:` if visible). The crop is saved between launches. Windowed or borderless mode is recommended; the selector uses the primary monitor. No Lua addon, binary game module or named pipe is required.
 
 ## Technical scope
 
