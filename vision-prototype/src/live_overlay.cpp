@@ -1,5 +1,6 @@
 #include "live_overlay.hpp"
 #include "app_language.hpp"
+#include "world_landmark.hpp"
 
 #include <QGuiApplication>
 #include <QPainter>
@@ -86,6 +87,17 @@ void LiveOverlay::setTargetEnabled(bool enabled) {
     update();
 }
 
+void LiveOverlay::setLandmark(const QVector3D &worldPosition,
+                              const QVector3D &cameraPosition,
+                              double yawDeg, double sourcePitchDeg, bool enabled) {
+    landmarkWorldPosition_ = worldPosition;
+    cameraPosition_ = cameraPosition;
+    landmarkYaw_ = yawDeg;
+    landmarkPitch_ = sourcePitchDeg;
+    landmarkEnabled_ = enabled;
+    update();
+}
+
 void LiveOverlay::showEvent(QShowEvent *event) {
     QWidget::showEvent(event);
 #ifdef Q_OS_WIN
@@ -105,7 +117,7 @@ void LiveOverlay::paintEvent(QPaintEvent *event) {
     painter.setCompositionMode(QPainter::CompositionMode_Source);
     painter.fillRect(rect(), Qt::transparent);
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
-    if (!targetEnabled_) return;
+    if (!targetEnabled_ && !landmarkEnabled_) return;
 
     painter.setRenderHint(QPainter::Antialiasing, true);
     const double screenW = width();
@@ -114,47 +126,94 @@ void LiveOverlay::paintEvent(QPaintEvent *event) {
     const double cy = screenH * 0.5;
     const double hfov = qDegreesToRadians(horizontalFov_);
     const double vfov = 2.0 * std::atan(std::tan(hfov * 0.5) * screenH / std::max(1.0, screenW));
-    const double yawDelta = wrapDegrees(desiredYaw_ - currentYaw_);
-    const double pitchDelta = desiredPitch_ - currentPitch_;
-
-    double markerX = cx;
-    double markerY = cy;
-    bool offScreen = false;
-    const bool safelyInFront = std::abs(yawDelta) < 88.0 && std::abs(pitchDelta) < 88.0;
-    if (safelyInFront) {
-        // Source yaw increases toward world +Y (the screen's left side when looking along +X).
-        markerX = cx - std::tan(qDegreesToRadians(yawDelta)) / std::tan(hfov * 0.5) * cx;
-        markerY = cy + std::tan(qDegreesToRadians(pitchDelta)) / std::tan(vfov * 0.5) * cy;
-    } else {
-        // Behind or near 90 degrees: show the direction on the screen edge without tan() flipping sign.
-        const double dx = yawDelta / std::max(1.0, horizontalFov_ * 0.5);
-        const double dy = pitchDelta / std::max(1.0, qRadiansToDegrees(vfov) * 0.5);
-        const double scale = std::max({std::abs(dx), std::abs(dy), 0.001});
-        markerX = cx - (dx / scale) * (cx - 34.0);
-        markerY = cy + (dy / scale) * (cy - 70.0);
-        offScreen = true;
-    }
-
-    const double margin = 28.0;
-    if (markerX < margin || markerX > screenW - margin ||
-        markerY < margin || markerY > screenH - margin) {
-        offScreen = true;
-    }
-    markerX = std::clamp(markerX, margin, screenW - margin);
-    markerY = std::clamp(markerY, margin, screenH - margin);
-
-    const QColor accent = offScreen ? QColor(255, 181, 69, 245) : QColor(89, 235, 176, 245);
     const QColor panel(12, 18, 26, 210);
-    painter.setPen(QPen(QColor(232, 240, 247, 185), 1.4));
-    painter.drawLine(QPointF(cx - 10, cy), QPointF(cx + 10, cy));
-    painter.drawLine(QPointF(cx, cy - 10), QPointF(cx, cy + 10));
-    painter.setPen(QPen(accent, 2.2));
-    painter.drawLine(QPointF(cx, cy), QPointF(markerX, markerY));
-    painter.drawEllipse(QPointF(markerX, markerY), 11.0, 11.0);
-    painter.drawLine(QPointF(markerX - 17, markerY), QPointF(markerX - 5, markerY));
-    painter.drawLine(QPointF(markerX + 5, markerY), QPointF(markerX + 17, markerY));
-    painter.drawLine(QPointF(markerX, markerY - 17), QPointF(markerX, markerY - 5));
-    painter.drawLine(QPointF(markerX, markerY + 5), QPointF(markerX, markerY + 17));
+
+    if (targetEnabled_) {
+        const double yawDelta = wrapDegrees(desiredYaw_ - currentYaw_);
+        const double pitchDelta = desiredPitch_ - currentPitch_;
+        double markerX = cx;
+        double markerY = cy;
+        bool offScreen = false;
+        const bool safelyInFront = std::abs(yawDelta) < 88.0 && std::abs(pitchDelta) < 88.0;
+        if (safelyInFront) {
+            markerX = cx - std::tan(qDegreesToRadians(yawDelta)) / std::tan(hfov * 0.5) * cx;
+            markerY = cy + std::tan(qDegreesToRadians(pitchDelta)) / std::tan(vfov * 0.5) * cy;
+        } else {
+            const double dx = yawDelta / std::max(1.0, horizontalFov_ * 0.5);
+            const double dy = pitchDelta / std::max(1.0, qRadiansToDegrees(vfov) * 0.5);
+            const double scale = std::max({std::abs(dx), std::abs(dy), 0.001});
+            markerX = cx - (dx / scale) * (cx - 34.0);
+            markerY = cy + (dy / scale) * (cy - 70.0);
+            offScreen = true;
+        }
+
+        const double margin = 28.0;
+        if (markerX < margin || markerX > screenW - margin ||
+            markerY < margin || markerY > screenH - margin) offScreen = true;
+        markerX = std::clamp(markerX, margin, screenW - margin);
+        markerY = std::clamp(markerY, margin, screenH - margin);
+        const QColor accent = offScreen ? QColor(255, 181, 69, 245) : QColor(89, 235, 176, 245);
+        painter.setPen(QPen(QColor(232, 240, 247, 185), 1.4));
+        painter.drawLine(QPointF(cx - 10, cy), QPointF(cx + 10, cy));
+        painter.drawLine(QPointF(cx, cy - 10), QPointF(cx, cy + 10));
+        painter.setPen(QPen(accent, 2.2));
+        painter.drawLine(QPointF(cx, cy), QPointF(markerX, markerY));
+        painter.drawEllipse(QPointF(markerX, markerY), 11.0, 11.0);
+        painter.drawLine(QPointF(markerX - 17, markerY), QPointF(markerX - 5, markerY));
+        painter.drawLine(QPointF(markerX + 5, markerY), QPointF(markerX + 17, markerY));
+        painter.drawLine(QPointF(markerX, markerY - 17), QPointF(markerX, markerY - 5));
+        painter.drawLine(QPointF(markerX, markerY + 5), QPointF(markerX, markerY + 17));
+    }
+
+    if (landmarkEnabled_) {
+        QPointF landmarkScreen;
+        double depth = 0.0;
+        const QSize viewport(qRound(screenW), qRound(screenH));
+        const bool inFront = projectWorldPointToScreen(
+            landmarkWorldPosition_, cameraPosition_, landmarkYaw_, landmarkPitch_,
+            horizontalFov_, viewport, &landmarkScreen, &depth);
+        if (inFront) {
+            const bool inViewport = landmarkScreen.x() >= 0.0 && landmarkScreen.x() < screenW &&
+                                    landmarkScreen.y() >= 0.0 && landmarkScreen.y() < screenH;
+            const double margin = 24.0;
+            const QPointF displayPoint(
+                std::clamp(landmarkScreen.x(), margin, screenW - margin),
+                std::clamp(landmarkScreen.y(), margin, screenH - margin));
+            constexpr double aimRadius = 22.0;
+            const bool aimedAt = inViewport &&
+                std::hypot(landmarkScreen.x() - cx, landmarkScreen.y() - cy) <= aimRadius;
+            const QColor ring = aimedAt ? QColor(60, 245, 130, 250)
+                                        : QColor(255, 190, 55, 245);
+            painter.setPen(QPen(ring, 3.0));
+            painter.setBrush(QColor(ring.red(), ring.green(), ring.blue(), 24));
+            painter.drawEllipse(displayPoint, aimRadius, aimRadius);
+            painter.setPen(QPen(ring, 2.0));
+            painter.setBrush(ring);
+            painter.drawEllipse(displayPoint, 3.0, 3.0);
+
+            if (!inViewport) {
+                painter.setPen(QPen(ring, 2.4));
+                painter.drawLine(displayPoint + QPointF(-7.0, -7.0),
+                                 displayPoint + QPointF(7.0, 7.0));
+                painter.drawLine(displayPoint + QPointF(-7.0, 7.0),
+                                 displayPoint + QPointF(7.0, -7.0));
+            }
+
+            painter.setPen(QColor(245, 248, 252, 230));
+            const QString label = aimedAt
+                ? uiText("AIM LOCK", "НАВЕДЕНО")
+                : (inViewport ? uiText("LANDMARK", "ОРИЕНТИР")
+                              : uiText("LANDMARK · TURN", "ОРИЕНТИР · ПОВОРОТ"));
+            painter.drawText(QRectF(displayPoint.x() + aimRadius + 7.0,
+                                    displayPoint.y() - 11.0, 190.0, 22.0),
+                             Qt::AlignLeft | Qt::AlignVCenter, label);
+        } else {
+            painter.setPen(QPen(QColor(255, 190, 55, 245), 2.5));
+            painter.drawText(QRectF(24.0, cy - 16.0, 240.0, 32.0),
+                             Qt::AlignLeft | Qt::AlignVCenter,
+                             uiText("LANDMARK BEHIND", "ОРИЕНТИР ПОЗАДИ"));
+        }
+    }
 
     const QRectF panelRect(18.0, screenH - 122.0, 430.0, 100.0);
     painter.setPen(QPen(QColor(65, 83, 100, 235), 1.0));
