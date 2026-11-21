@@ -6,6 +6,7 @@ A standalone Qt 6 / C++20 Windows application for offline BSP inspection and vis
 
 - Qt desktop UI with **Visual matching** and **BSP geometry** tabs.
 - Load two image files and compare local ORB visual features.
+- Capture the primary monitor after a two-second delay; the app hides temporarily so the user can switch back to the game, without reading game memory or automating controls.
 - Ratio-test descriptor filtering and RANSAC homography verification; the UI reports the inlier count separately from raw matches.
 - Load Source **BSP version 20** files with validation of the VBSP signature, 64 lump ranges, and core geometry record lengths.
 - Parse vertices, edges, surfedges, and faces; reconstruct valid face outlines.
@@ -68,8 +69,10 @@ If you already opened the repository root in Visual Studio, use **File → Open 
 ## Using the app
 
 1. In **BSP geometry**, choose a Source BSP v20 file. Check the summary and lump table; click the top-down preview to read XY.
-2. In **Visual matching**, load a reference image and a screenshot of the same scene from a different view.
+2. In **Visual matching**, load a reference image. To grab the game display, choose **Capture primary screen (2 s)** and switch to the game after the app hides; otherwise load a screenshot file.
 3. Choose **Find visual matches**. Inspect the drawn match lines and RANSAC inlier count. Treat this as a diagnostic, not a reliable camera pose.
+
+Capture currently targets the primary monitor. Some exclusive-fullscreen games may not be capturable; try borderless/windowed mode in that case.
 
 For meaningful image matching, use screenshots from the same map and preferably the same material/lighting configuration.
 
