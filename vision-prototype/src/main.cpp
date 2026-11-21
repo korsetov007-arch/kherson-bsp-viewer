@@ -6,6 +6,7 @@
 #include "live_overlay.hpp"
 #include "cl_showpos_reader.hpp"
 #include "heightfield.hpp"
+#include "triangle_bvh.hpp"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -434,6 +435,10 @@ private:
             loadedMapName_ = QFileInfo(path).completeBaseName();
             heightfield_.clear();
             heightfieldVisible_ = false;
+            collisionBvh_.clear();
+            collisionBvhReady_ = false;
+            collisionBvhAttempted_ = false;
+            collisionBvhError_.clear();
             if (heightfieldCheck_) {
                 const QSignalBlocker blocker(heightfieldCheck_);
                 heightfieldCheck_->setChecked(false);
@@ -847,6 +852,41 @@ private:
                 static_cast<float>(oy + vy * t),
                 static_cast<float>(oz + vz * t - 0.5 * g * t * t)));
         }
+        bool collisionTraceAvailable = false;
+        bool collisionBlocked = false;
+        double collisionFlightTime = 0.0;
+        bspvision::SegmentHit collisionHit;
+
+        if (bspFile_.isLoaded()) {
+            if (!collisionBvhAttempted_) {
+                collisionBvhAttempted_ = true;
+                statusBar()->showMessage(bspvision::uiText(
+                    "Building BSP surface BVH for trajectory checks…",
+                    "Строю BVH поверхностей BSP для проверки траектории…"));
+                QApplication::processEvents();
+                if (!collisionBvh_.build(bspFile_.facePolygons(false), &collisionBvhError_))
+                    collisionBvhError_ = collisionBvhError_.isEmpty()
+                        ? QStringLiteral("The surface BVH could not be built.") : collisionBvhError_;
+                else
+                    collisionBvhReady_ = true;
+            }
+
+            if (collisionBvhReady_) {
+                collisionTraceAvailable = true;
+                for (int i = 1; i < points.size(); ++i) {
+                    bspvision::SegmentHit hit;
+                    if (!collisionBvh_.intersectSegment(points[i - 1], points[i], &hit)) continue;
+                    collisionBlocked = true;
+                    collisionHit = hit;
+                    collisionFlightTime = duration *
+                        (static_cast<double>(i - 1) + hit.fraction) / static_cast<double>(steps);
+                    points[i] = hit.position;
+                    points.resize(i + 1);
+                    break;
+                }
+            }
+        }
+
         const QVector3D origin(static_cast<float>(ox), static_cast<float>(oy), static_cast<float>(oz));
         const QVector3D target(static_cast<float>(tx), static_cast<float>(ty), static_cast<float>(tz));
         ballisticsView_->setTrajectory(points, origin, target, targetDefined_);
@@ -860,8 +900,32 @@ private:
             .arg(qRadiansToDegrees(pitch), 0, 'f', 2)
             .arg(duration, 0, 'f', 2)
             .arg(end.x(), 0, 'f', 1).arg(end.y(), 0, 'f', 1).arg(end.z(), 0, 'f', 1);
-        if (targetDefined_) summary += bspvision::uiText(" Ideal endpoint error: %1 units.", " Ошибка в конечной точке: %1 ед.").arg(miss, 0, 'f', 1);
-        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. Live camera data requires the native bridge.", " Зелёный = запуск, красный = цель, янтарный = траектория. Для данных камеры нужен нативный мост.");
+        if (collisionBlocked) {
+            summary += bspvision::uiText(
+                " BLOCKED by BSP surface near (%1, %2, %3) at t=%4 s, material=%5. This is a render-surface approximation, not Source engine collision.",
+                " ПРЕПЯТСТВИЕ: поверхность BSP около (%1, %2, %3), t=%4 с, материал=%5. Это приближение по треугольникам рендера, а не физическая коллизия Source.")
+                .arg(collisionHit.position.x(), 0, 'f', 1)
+                .arg(collisionHit.position.y(), 0, 'f', 1)
+                .arg(collisionHit.position.z(), 0, 'f', 1)
+                .arg(collisionFlightTime, 0, 'f', 2)
+                .arg(collisionHit.materialName.isEmpty() ? QStringLiteral("unknown") : collisionHit.materialName);
+        } else if (collisionTraceAvailable) {
+            summary += bspvision::uiText(
+                " BSP triangle-surface trace: clear (props/engine collision are not included).",
+                " Проверка треугольников BSP: препятствий не найдено (пропы и физика движка не учитываются).");
+            if (targetDefined_)
+                summary += bspvision::uiText(" Ideal endpoint error: %1 units.", " Ошибка в конечной точке: %1 ед.").arg(miss, 0, 'f', 1);
+        } else if (bspFile_.isLoaded()) {
+            summary += bspvision::uiText(
+                " BSP surface trace unavailable: %1", " Проверка поверхности BSP недоступна: %1").arg(collisionBvhError_);
+        } else {
+            summary += bspvision::uiText(
+                " No BSP map loaded; occlusion was not checked.", " Карта BSP не загружена; препятствия не проверялись.");
+            if (targetDefined_)
+                summary += bspvision::uiText(" Ideal endpoint error: %1 units.", " Ошибка в конечной точке: %1 ед.").arg(miss, 0, 'f', 1);
+        }
+        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. Native Bridge provides live camera data when available.",
+                                     " Зелёный = запуск, красный = цель, янтарный = траектория. Native Bridge передаёт данные камеры при доступности.");
         ballisticsSummary_->setText(summary);
         syncOverlay();
     }
@@ -1007,6 +1071,10 @@ private:
     QTimer *screenCaptureTimer_ = nullptr;
     bspvision::ClShowPosReader screenReader_;
     bspvision::Heightfield heightfield_;
+    bspvision::TriangleBvh collisionBvh_;
+    bool collisionBvhReady_ = false;
+    bool collisionBvhAttempted_ = false;
+    QString collisionBvhError_;
     bspvision::LiveOverlay *overlay_ = nullptr;
     QLocalServer *bridgeServer_ = nullptr;
     QLocalSocket *bridgeSocket_ = nullptr;
