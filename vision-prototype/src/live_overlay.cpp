@@ -117,14 +117,15 @@ void LiveOverlay::paintEvent(QPaintEvent *event) {
     bool offScreen = false;
     const bool safelyInFront = std::abs(yawDelta) < 88.0 && std::abs(pitchDelta) < 88.0;
     if (safelyInFront) {
-        markerX = cx + std::tan(qDegreesToRadians(yawDelta)) / std::tan(hfov * 0.5) * cx;
+        // Source yaw increases toward world +Y (the screen's left side when looking along +X).
+        markerX = cx - std::tan(qDegreesToRadians(yawDelta)) / std::tan(hfov * 0.5) * cx;
         markerY = cy + std::tan(qDegreesToRadians(pitchDelta)) / std::tan(vfov * 0.5) * cy;
     } else {
         // Behind or near 90 degrees: show the direction on the screen edge without tan() flipping sign.
         const double dx = yawDelta / std::max(1.0, horizontalFov_ * 0.5);
         const double dy = pitchDelta / std::max(1.0, qRadiansToDegrees(vfov) * 0.5);
         const double scale = std::max({std::abs(dx), std::abs(dy), 0.001});
-        markerX = cx + (dx / scale) * (cx - 34.0);
+        markerX = cx - (dx / scale) * (cx - 34.0);
         markerY = cy + (dy / scale) * (cy - 70.0);
         offScreen = true;
     }
