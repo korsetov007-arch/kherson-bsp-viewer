@@ -541,18 +541,6 @@ private:
             "Contour interval in Source world units.", "Шаг изолиний в единицах мира Source."));
         controls->addWidget(contourIntervalCombo_);
 
-        controls->addWidget(new QLabel(bspvision::uiText("Landmark Z", "Высота Z"), tab));
-        landmarkZ_ = makeCoordinate(hasLandmark_ ? landmarkPosition_.z() : 0.0, tab);
-        landmarkZ_->setMaximumWidth(92);
-        controls->addWidget(landmarkZ_);
-        pickLandmarkButton_ = new QPushButton(
-            bspvision::uiText("Pick aiming circle…", "Задать круг-ориентир…"), tab);
-        pickLandmarkButton_->setEnabled(bspFile_.isLoaded());
-        controls->addWidget(pickLandmarkButton_);
-        clearLandmarkButton_ = new QPushButton(
-            bspvision::uiText("Clear", "Убрать"), tab);
-        clearLandmarkButton_->setEnabled(hasLandmark_);
-        controls->addWidget(clearLandmarkButton_);
         controls->addStretch();
         layout->addLayout(controls);
         connect(showSkyboxCheck_, &QCheckBox::toggled, this, [this](bool checked) {
@@ -571,48 +559,6 @@ private:
                     ? heightfield_.contours256() : heightfield_.contours128());
             }
         });
-        connect(pickLandmarkButton_, &QPushButton::clicked, this, [this] {
-            if (!bspFile_.isLoaded()) return;
-            pickMode_ = 0;
-            landmarkPickMode_ = true;
-            statusBar()->showMessage(bspvision::uiText(
-                "Click the landmark location on the top-down BSP map. Set its Z height in the Landmark Z field.",
-                "Щёлкните по месту ориентира на карте BSP сверху. Высоту задайте в поле «Высота Z»."));
-        });
-        connect(clearLandmarkButton_, &QPushButton::clicked, this, [this] {
-            hasLandmark_ = false;
-            if (clearLandmarkButton_) clearLandmarkButton_->setEnabled(false);
-            landmarkTrackingEnabled_ = false;
-            landmarkPickMode_ = false;
-            landmarkPosition_ = QVector3D();
-            if (mapView_) mapView_->setWorldLandmark(0.0, 0.0, false);
-            if (!targetDefined_ || !trajectoryCalculated_) {
-                if (overlay_) overlay_->hide();
-            }
-            if (!landmarkSettingsKey_.isEmpty()) {
-                QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
-                settings.remove(landmarkSettingsKey_);
-            }
-            syncOverlay();
-            if (landmarkStatusLabel_) landmarkStatusLabel_->setText(
-                bspvision::uiText("No aiming landmark set. Pick a point on the BSP map.", "Круг-ориентир не задан. Выберите точку на карте BSP."));
-            statusBar()->showMessage(bspvision::uiText("Aiming landmark cleared.", "Круг-ориентир удалён."));
-        });
-        connect(landmarkZ_, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                this, [this](double z) {
-            if (!hasLandmark_) return;
-            landmarkPosition_.setZ(static_cast<float>(z));
-            if (mapView_) mapView_->setWorldLandmark(landmarkPosition_.x(), landmarkPosition_.y(), true);
-            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
-            settings.beginGroup(landmarkSettingsKey_);
-            settings.setValue(QStringLiteral("valid"), true);
-            settings.setValue(QStringLiteral("x"), landmarkPosition_.x());
-            settings.setValue(QStringLiteral("y"), landmarkPosition_.y());
-            settings.setValue(QStringLiteral("z"), landmarkPosition_.z());
-            settings.endGroup();
-            syncOverlay();
-        });
-
         bspSummary_ = new QLabel(bspvision::uiText(
             "No map loaded. This parser currently accepts Source BSP version 20.",
             "Карта не загружена. Поддерживается Source BSP версии 20."), tab);
@@ -649,17 +595,6 @@ private:
             tab);
         coordinateLabel_->setWordWrap(true);
         layout->addWidget(coordinateLabel_);
-        landmarkStatusLabel_ = new QLabel(tab);
-        landmarkStatusLabel_->setWordWrap(true);
-        landmarkStatusLabel_->setText(hasLandmark_
-            ? bspvision::uiText("Aiming landmark at X=%1, Y=%2, Z=%3. Press F7 to show/hide the live circle.",
-                                "Круг-ориентир: X=%1, Y=%2, Z=%3. F7 — показать/скрыть круг.")
-                  .arg(landmarkPosition_.x(), 0, 'f', 1)
-                  .arg(landmarkPosition_.y(), 0, 'f', 1)
-                  .arg(landmarkPosition_.z(), 0, 'f', 1)
-            : bspvision::uiText("Pick a point on the map to place one aiming circle. F7 toggles it in-game.",
-                                "Выберите точку на карте, чтобы задать один круг-ориентир. F7 включает его в игре."));
-        layout->addWidget(landmarkStatusLabel_);
         tabs->addTab(tab, bspvision::uiText("BSP geometry", "Геометрия BSP"));
 
         connect(loadBsp, &QPushButton::clicked, this, [this] {
@@ -674,22 +609,6 @@ private:
                 return;
             }
             loadedMapName_ = QFileInfo(path).completeBaseName();
-            const QString absoluteMapPath = QFileInfo(path).absoluteFilePath();
-            landmarkSettingsKey_ = QStringLiteral("landmarks/") +
-                QString::fromLatin1(QCryptographicHash::hash(
-                    absoluteMapPath.toUtf8(), QCryptographicHash::Sha256).toHex());
-            QSettings landmarkSettings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
-            landmarkSettings.beginGroup(landmarkSettingsKey_);
-            hasLandmark_ = landmarkSettings.value(QStringLiteral("valid"), false).toBool();
-            landmarkPosition_ = hasLandmark_
-                ? QVector3D(landmarkSettings.value(QStringLiteral("x"), 0.0).toFloat(),
-                            landmarkSettings.value(QStringLiteral("y"), 0.0).toFloat(),
-                            landmarkSettings.value(QStringLiteral("z"), 0.0).toFloat())
-                : QVector3D();
-            landmarkSettings.endGroup();
-            landmarkTrackingEnabled_ = false;
-            landmarkPickMode_ = false;
-            if (landmarkZ_) landmarkZ_->setValue(hasLandmark_ ? landmarkPosition_.z() : 0.0);
             heightfield_.clear();
             heightfieldVisible_ = false;
             collisionBvh_.clear();
@@ -703,45 +622,12 @@ private:
             }
             if (contourIntervalCombo_) contourIntervalCombo_->setEnabled(true);
             if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
-            if (pickLandmarkButton_) pickLandmarkButton_->setEnabled(true);
-            if (clearLandmarkButton_) clearLandmarkButton_->setEnabled(hasLandmark_);
             refreshMapViews();
             statusBar()->showMessage(bspvision::uiText("Loaded BSP: %1", "Загружена карта BSP: %1")
                 .arg(QFileInfo(path).fileName()));
         });
 
         mapView_->pointSelected = [this](double x, double y) {
-            if (landmarkPickMode_) {
-                landmarkPickMode_ = false;
-                bspvision::ClShowPosSample liveSample;
-                if (landmarkZ_ && screenReader_.latestSample(&liveSample))
-                    landmarkZ_->setValue(liveSample.position.z());
-                const double z = landmarkZ_ ? landmarkZ_->value() : 0.0;
-                landmarkPosition_ = QVector3D(static_cast<float>(x), static_cast<float>(y),
-                                               static_cast<float>(z));
-                hasLandmark_ = true;
-                if (clearLandmarkButton_) clearLandmarkButton_->setEnabled(true);
-                QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
-                settings.beginGroup(landmarkSettingsKey_);
-                settings.setValue(QStringLiteral("valid"), true);
-                settings.setValue(QStringLiteral("x"), landmarkPosition_.x());
-                settings.setValue(QStringLiteral("y"), landmarkPosition_.y());
-                settings.setValue(QStringLiteral("z"), landmarkPosition_.z());
-                settings.endGroup();
-                if (mapView_) mapView_->setWorldLandmark(x, y, true);
-                if (landmarkStatusLabel_) landmarkStatusLabel_->setText(
-                    bspvision::uiText("Aiming landmark: X=%1, Y=%2, Z=%3. Press F7 to show/hide the live circle.",
-                                      "Круг-ориентир: X=%1, Y=%2, Z=%3. F7 — показать/скрыть круг.")
-                        .arg(x, 0, 'f', 1).arg(y, 0, 'f', 1).arg(z, 0, 'f', 1));
-                coordinateLabel_->setText(bspvision::uiText(
-                    "Aiming landmark set. Adjust Landmark Z for the selected floor, then press F7 in-game.",
-                    "Ориентир установлен. При необходимости скорректируйте высоту Z, затем нажмите F7 в игре."));
-                syncOverlay();
-                statusBar()->showMessage(bspvision::uiText(
-                    "Landmark saved. Press F7 to toggle the moving on-screen aiming circle.",
-                    "Ориентир задан. Нажмите F7, чтобы включить/выключить движущийся экранный круг."));
-                return;
-            }
             coordinateLabel_->setText(bspvision::uiText(
                 "Selected top-down coordinate: X = %1, Y = %2. Set Z manually for the correct floor.",
                 "Выбраны координаты сверху: X = %1, Y = %2. Укажите Z вручную для нужного этажа.")
@@ -1009,7 +895,6 @@ private:
         tabs->addTab(tab, bspvision::uiText("Ballistic lab", "Баллистика"));
 
         connect(pickOrigin, &QPushButton::clicked, this, [this, tabs] {
-            landmarkPickMode_ = false;
             pickMode_ = 1;
             tabs->setCurrentIndex(0);
             statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set launch X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y запуска; координату Z задайте во вкладке баллистики."));
@@ -1147,7 +1032,9 @@ private:
             screenReaderEnabledCheck_->setChecked(false);
             return; // The toggled handler performs the stop.
         }
-        landmarkTrackingEnabled_ = false;
+        autoAimEnabled_ = false;
+        autoAimStage_ = AutoAimStage::Disabled;
+        autoAimStatus_ = bspvision::uiText("Auto aim stopped: telemetry reader off.", "Автодоводка остановлена: чтение телеметрии выключено.");
         if (screenCaptureTimer_) screenCaptureTimer_->stop();
         screenReader_.stop();
         if (screenReaderStatusLabel_) screenReaderStatusLabel_->setText(screenReader_.lastStatus());
@@ -1163,6 +1050,7 @@ private:
             if (currentYawInit_) currentYawInit_->setValue(sample.angles.y());
             if (currentPitchInit_) currentPitchInit_->setValue(sample.angles.x());
             if (useScreenPositionButton_) useScreenPositionButton_->setEnabled(true);
+            processAutoAimSample(sample);
             if (liveTelemetryLabel_) {
                 liveTelemetryLabel_->setText(
                     QStringLiteral("cl_showpos · pos (%1, %2, %3) · ang p/y/r (%4, %5, %6) · confidence %7%")
