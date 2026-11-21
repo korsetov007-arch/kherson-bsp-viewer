@@ -7,7 +7,6 @@ if not ok or not istable(bridge) then
     return
 end
 
-local ADDON = "source_bsp_geometry_lab"
 local SEND_INTERVAL = 0.10
 local lastSend = 0
 local latestTelemetry = nil
