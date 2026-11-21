@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QRect>
 #include <QString>
+#include <QVector3D>
 
 namespace bspvision {
 
@@ -17,6 +18,8 @@ public:
     void setTrackingStatus(const QString &status);
     void setTargetDetails(double range, double flightSeconds, const QString &mapName);
     void setTargetEnabled(bool enabled);
+    void setLandmark(const QVector3D &worldPosition, const QVector3D &cameraPosition,
+                     double yawDeg, double sourcePitchDeg, bool enabled);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -33,6 +36,11 @@ private:
     QString trackingStatus_ = QStringLiteral("Tracking not started");
     QString mapName_;
     bool targetEnabled_ = false;
+    bool landmarkEnabled_ = false;
+    QVector3D landmarkWorldPosition_;
+    QVector3D cameraPosition_;
+    double landmarkYaw_ = 0.0;
+    double landmarkPitch_ = 0.0;
 };
 
 } // namespace bspvision
