@@ -79,6 +79,8 @@ public:
 
 public:
     ~MainWindow() override {
+        if (QCoreApplication::instance())
+            QCoreApplication::instance()->removeNativeEventFilter(&mouseTracker_);
         if (overlay_) {
             overlay_->close();
             delete overlay_;
