@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BSP — просмотр карты</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      background: #10151b;
+      color: #e8edf2;
+      font-synthesis: none;
+      --panel: #080a07;
+      --panel-raised: #10150d;
+      --line: #2a3024;
+      --muted: #a4a69a;
+      --olive: #29301f;
+      --olive-hover: #373f2b;
+      --accent-soft: #a4b578;
+    }
+
+    * { box-sizing: border-box; }
+
+    body { margin: 0; min-height: 100vh; }
+
+    main {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .brand { min-width: 190px; }
+    .brand strong { display: block; font-size: 15px; letter-spacing: .02em; }
+    .brand span, .hint, .status { color: var(--muted); font-size: 12px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 9px;
+      flex: 1;
+    }
+
+    button, .file-button {
+      border: 1px solid #383e31;
+      border-radius: 2px;
+      padding: 8px 12px;
+      color: #e4e4dd;
+      background: var(--olive);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover, .file-button:hover { background: var(--olive-hover); }
+    button:disabled { opacity: .45; cursor: default; }
+    input[type=file] { display: none; }
+    .file-button { display: inline-block; background: #3a462a; border-color: #4b5935; }
+    .file-button:hover { background: #4a5835; }
+    .status { margin-left: auto; }
+
+    .layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+    }
+
+    .viewport {
+      position: relative;
+      min-height: 400px;
+      overflow: hidden;
+      background: radial-gradient(ellipse at 50% 45%, #151a0f 0%, #0c1009 74%);
+    }
+
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      gap: 7px;
+      padding: 24px;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .empty strong { font-size: 17px; }
+    .empty span { color: var(--muted); font-size: 13px; }
+
+    aside {
+      padding: 20px 18px;
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    aside h2 { margin: 0 0 16px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #bec2b2; }
+    .coords {
+      margin: 0 0 12px;
+      padding: 14px;
+      border: 1px solid #343a2d;
+      border-radius: 2px;
+      background: var(--panel-raised);
+      font: 14px/1.8 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .coords div { display: flex; justify-content: space-between; gap: 12px; }
+    .coords span { color: #a4a69a; }
+    .coords b { font-weight: 500; color: var(--accent-soft); }
+    .hint { line-height: 1.6; }
+    .stats { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.9; color: var(--muted); }
+    .stats b { color: #dedfd5; font-weight: 500; }
+    .error { color: #ff9a8f; }
+
+    @media (max-width: 760px) {
+      header { align-items: flex-start; flex-direction: column; gap: 11px; }
+      .status { margin-left: 0; width: 100%; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: minmax(360px, 1fr) auto; }
+      aside { border-left: 0; border-top: 1px solid var(--line); }
+      .viewport { min-height: 45vh; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand">
+        <strong>BSP · просмотр карты</strong>
+        <span>Геометрия и координаты клика</span>
+      </div>
+      <div class="toolbar">
+        <label class="file-button" for="file">Открыть BSP</label>
+        <input id="file" type="file" accept=".bsp">
+        <button id="copy" disabled>Скопировать координаты</button>
+        <button id="reset" disabled>Вид целиком</button>
+        <div id="status" class="status">Выберите BSP-файл, чтобы начать</div>
+      </div>
+    </header>
+    <section class="layout">
+      <div class="viewport" id="viewport">
+        <canvas id="view"></canvas>
+        <div class="empty" id="empty">
+          <strong>Откройте файл карты .bsp</strong>
+          <span>Файл обрабатывается локально и не отправляется в сеть</span>
+          <span>ЛКМ — вращение / выбор точки · ПКМ — перемещение · колесо — масштаб</span>
+        </div>
+      </div>
+      <aside>
+        <h2>Координаты точки</h2>
+        <div class="coords">
+          <div><span>X</span><b id="coord-x">—</b></div>
+          <div><span>Y</span><b id="coord-y">—</b></div>
+          <div><span>Z</span><b id="coord-z">—</b></div>
+        </div>
+        <div class="hint">Кликните по поверхности карты. Показаны координаты в единицах BSP (Source units). Перетащите ЛКМ для осмотра, ПКМ — для сдвига вида.</div>
+        <div class="stats" id="stats"></div>
+      </aside>
+    </section>
+  </main>
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = (id) => document.getElementById(id);
+      const canvas = $("view");
+      const gl = canvas.getContext("webgl2", { antialias: true, alpha: false });
+      const status = $("status");
+      const floatFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+      let mesh = null;
+      let meshBuffer = null;
+      let gridBuffer = null;
+      let markerBuffer = null;
+      let selected = null;
+      let target = [0, 0, 0];
+      let bounds = null;
+      let radius = 1000;
+      let yaw = 0.8;
+      let pitch = 0.48;
+      let dragging = null;
+      let pointCount = 0;
+
+      if (!gl) {
+        status.textContent = "Для просмотра нужен браузер с поддержкой WebGL 2";
+        status.classList.add("error");
+        return;
+      }
+
+      const vertexShader = `#version 300 es
+        in vec3 aPosition;
+        in vec3 aNormal;
+        uniform mat4 uViewProjection;
+        out vec3 vNormal;
+        void main() {
+          gl_Position = uViewProjection * vec4(aPosition, 1.0);
+          vNormal = aNormal;
+        }`;
+
+      const fragmentShader = `#version 300 es
+        precision highp float;
+        uniform vec3 uColor;
+        uniform bool uLit;
+        in vec3 vNormal;
+        out vec4 outColor;
+        void main() {
+          if (!uLit) {
+            outColor = vec4(uColor, 1.0);
+            return;
+          }
+          float light = 0.38 + 0.62 * abs(dot(normalize(vNormal), normalize(vec3(0.35, -0.4, 0.85))));
+          outColor = vec4(uColor * light, 1.0);
+        }`;
+
+      function compileShader(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          const message = gl.getShaderInfoLog(shader);
+          gl.deleteShader(shader);
+          throw new Error(message || "Не удалось собрать шейдер");
+        }
+        return shader;
+      }
+
+      let program;
+      try {
+        program = gl.createProgram();
+        gl.attachShader(program, compileShader(gl.VERTEX_SHADER, vertexShader));
+        gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, fragmentShader));
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          throw new Error(gl.getProgramInfoLog(program) || "Не удалось связать шейдеры");
+        }
+      } catch (error) {
+        status.textContent = `Ошибка WebGL: ${error.message}`;
+        status.classList.add("error");
+        return;
+      }
+
+      const locations = {
+        position: gl.getAttribLocation(program, "aPosition"),
+        normal: gl.getAttribLocation(program, "aNormal"),
+        viewProjection: gl.getUniformLocation(program, "uViewProjection"),
+        color: gl.getUniformLocation(program, "uColor"),
+        lit: gl.getUniformLocation(program, "uLit")
+      };
+
+      function addTriangle(out, a, b, c, normalA, normalB, normalC) {
+        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+        const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+        let nx = uy * vz - uz * vy;
+        let ny = uz * vx - ux * vz;
+        let nz = ux * vy - uy * vx;
+        const length = Math.hypot(nx, ny, nz);
+        if (length < 1e-8) return;
+        nx /= length;
+        ny /= length;
+        nz /= length;
+        const na = normalA || [nx, ny, nz];
+        const nb = normalB || [nx, ny, nz];
+        const nc = normalC || [nx, ny, nz];
+        out.push(a[0], a[1], a[2], na[0], na[1], na[2],
+          b[0], b[1], b[2], nb[0], nb[1], nb[2],
+          c[0], c[1], c[2], nc[0], nc[1], nc[2]);
+      }
+
+      async function readGeometry(file) {
+        const header = new DataView(await file.slice(0, 1036).arrayBuffer());
+        if (header.byteLength < 1036 ||
+            header.getUint8(0) !== 0x56 || header.getUint8(1) !== 0x42 ||
+            header.getUint8(2) !== 0x53 || header.getUint8(3) !== 0x50) {
+          throw new Error("Это не Source BSP (ожидался заголовок VBSP)");
+        }
+        const version = header.getInt32(4, true);
+        if (version !== 20) {
+          throw new Error(`Версия BSP ${version} не поддерживается (поддерживается BSP v20)`);
+        }
+
+        const fileSize = file.size;
+        async function readLump(index) {
+          const offset = header.getInt32(8 + index * 16, true);
+          const length = header.getInt32(12 + index * 16, true);
+          if (offset < 0 || length < 0 || offset + length > fileSize) {
+            throw new Error(`Повреждён заголовок BSP (lump ${index})`);
+          }
+          return new DataView(await file.slice(offset, offset + length).arrayBuffer());
+        }
+
+        const [verticesLump, facesLump, edgesLump, surfedgesLump, texInfoLump, dispInfoLump, dispVertsLump] =
+          await Promise.all([3, 7, 12, 13, 6, 26, 33].map(readLump));
+        if (verticesLump.byteLength % 12 || edgesLump.byteLength % 4 ||
+            surfedgesLump.byteLength % 4 || facesLump.byteLength % 56 ||
+            texInfoLump.byteLength % 72 ||
+            dispInfoLump.byteLength % 176 || dispVertsLump.byteLength % 20) {
+          throw new Error("Неожиданный размер геометрического lump — файл может быть повреждён");
+        }
+
+        const vertices = new Array(verticesLump.byteLength / 12);
+        const min = [Infinity, Infinity, Infinity];
+        const max = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < vertices.length; i++) {
+          const p = i * 12;
+          const point = [verticesLump.getFloat32(p, true), verticesLump.getFloat32(p + 4, true), verticesLump.getFloat32(p + 8, true)];
+          vertices[i] = point;
+          for (let axis = 0; axis < 3; axis++) {
+            min[axis] = Math.min(min[axis], point[axis]);
+            max[axis] = Math.max(max[axis], point[axis]);
+          }
+        }
+
+        const edgeCount = edgesLump.byteLength / 4;
+        const surfedgeCount = surfedgesLump.byteLength / 4;
+        const faceCount = facesLump.byteLength / 56;
+        const faceLoops = new Array(faceCount);
+        const displacementFaces = new Set();
+        for (let i = 0; i < dispInfoLump.byteLength / 176; i++) {
+          displacementFaces.add(dispInfoLump.getUint16(i * 176 + 36, true));
+        }
+
+        const triangles = [];
+        for (let face = 0; face < faceCount; face++) {
+          const p = face * 56;
+          const firstEdge = facesLump.getInt32(p + 4, true);
+          const edgeTotal = facesLump.getInt16(p + 8, true);
+          if (edgeTotal < 3 || firstEdge < 0 || firstEdge + edgeTotal > surfedgeCount) continue;
+          const loop = [];
+          let valid = true;
+          for (let j = 0; j < edgeTotal; j++) {
+            const surfedge = surfedgesLump.getInt32((firstEdge + j) * 4, true);
+            const edge = Math.abs(surfedge);
+            if (edge >= edgeCount) { valid = false; break; }
+            const edgeOffset = edge * 4;
+            const vertex = edgesLump.getUint16(edgeOffset + (surfedge < 0 ? 2 : 0), true);
+            if (vertex >= vertices.length) { valid = false; break; }
+            loop.push(vertices[vertex]);
+          }
+          if (!valid) continue;
+          faceLoops[face] = loop;
+          const texInfo = facesLump.getInt16(p + 10, true);
+          const surfaceFlags = texInfo >= 0 && texInfo < texInfoLump.byteLength / 72
+            ? texInfoLump.getUint32(texInfo * 72 + 64, true)
+            : 0;
+          const isHiddenSurface = (surfaceFlags & (0x4 | 0x40 | 0x80)) !== 0;
+          if (displacementFaces.has(face) || isHiddenSurface) continue;
+          for (let j = 1; j < loop.length - 1; j++) {
+            addTriangle(triangles, loop[0], loop[j], loop[j + 1]);
+          }
+        }
+
+        const dispVertCount = dispVertsLump.byteLength / 20;
+        let displacementCount = 0;
+        for (let i = 0; i < dispInfoLump.byteLength / 176; i++) {
+          const p = i * 176;
+          const faceIndex = dispInfoLump.getUint16(p + 36, true);
+          const loop = faceLoops[faceIndex];
+          const power = dispInfoLump.getInt32(p + 20, true);
+          if (!loop || loop.length !== 4 || power < 1 || power > 4) continue;
+          const side = 1 << power;
+          const width = side + 1;
+          const vertexStart = dispInfoLump.getInt32(p + 12, true);
+          if (vertexStart < 0 || vertexStart + width * width > dispVertCount) continue;
+
+          const start = [
+            dispInfoLump.getFloat32(p, true),
+            dispInfoLump.getFloat32(p + 4, true),
+            dispInfoLump.getFloat32(p + 8, true)
+          ];
+          let startCorner = 0;
+          let closest = Infinity;
+          for (let j = 0; j < 4; j++) {
+            const d = (loop[j][0] - start[0]) ** 2 + (loop[j][1] - start[1]) ** 2 + (loop[j][2] - start[2]) ** 2;
+            if (d < closest) { closest = d; startCorner = j; }
+          }
+          const corners = [
+            loop[startCorner],
+            loop[(startCorner + 3) % 4],
+            loop[(startCorner + 2) % 4],
+            loop[(startCorner + 1) % 4]
+          ];
+          const grid = new Array(width * width);
+          for (let row = 0; row < width; row++) {
+            const v = row / side;
+            for (let col = 0; col < width; col++) {
+              const u = col / side;
+              const base = [
+                (1 - u) * (1 - v) * corners[0][0] + u * (1 - v) * corners[1][0] + u * v * corners[2][0] + (1 - u) * v * corners[3][0],
+                (1 - u) * (1 - v) * corners[0][1] + u * (1 - v) * corners[1][1] + u * v * corners[2][1] + (1 - u) * v * corners[3][1],
+                (1 - u) * (1 - v) * corners[0][2] + u * (1 - v) * corners[1][2] + u * v * corners[2][2] + (1 - u) * v * corners[3][2]
+              ];
+              const vertOffset = (vertexStart + row * width + col) * 20;
+              const displacement = dispVertsLump.getFloat32(vertOffset + 12, true);
+              grid[row * width + col] = [
+                base[0] + dispVertsLump.getFloat32(vertOffset, true) * displacement,
+                base[1] + dispVertsLump.getFloat32(vertOffset + 4, true) * displacement,
+                base[2] + dispVertsLump.getFloat32(vertOffset + 8, true) * displacement
+              ];
+              for (let axis = 0; axis < 3; axis++) {
+                min[axis] = Math.min(min[axis], grid[row * width + col][axis]);
+                max[axis] = Math.max(max[axis], grid[row * width + col][axis]);
+              }
+            }
+          }
+
+          const smoothNormals = Array.from({ length: grid.length }, () => [0, 0, 0]);
+          function accumulateNormal(i0, i1, i2) {
+            const a = grid[i0], b = grid[i1], c = grid[i2];
+            const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+            const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+            const normal = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+            for (const index of [i0, i1, i2]) {
+              smoothNormals[index][0] += normal[0];
+              smoothNormals[index][1] += normal[1];
+              smoothNormals[index][2] += normal[2];
+            }
+          }
+
+          for (let row = 0; row < side; row++) {
+            for (let col = 0; col < side; col++) {
+              const a = row * width + col;
+              const b = a + 1;
+              const c = a + width;
+              const d = c + 1;
+              if ((row * width + col) & 1) {
+                accumulateNormal(a, c, b);
+                accumulateNormal(b, c, d);
+              } else {
+                accumulateNormal(a, c, d);
+                accumulateNormal(a, d, b);
+              }
+            }
+          }
+
+          for (const normal of smoothNormals) {
+            const length = Math.hypot(normal[0], normal[1], normal[2]) || 1;
+            normal[0] /= length;
+            normal[1] /= length;
+            normal[2] /= length;
+          }
+
+          for (let row = 0; row < side; row++) {
+            for (let col = 0; col < side; col++) {
+              const a = row * width + col;
+              const b = a + 1;
+              const c = a + width;
+              const d = c + 1;
+              if ((row * width + col) & 1) {
+                addTriangle(triangles, grid[a], grid[c], grid[b], smoothNormals[a], smoothNormals[c], smoothNormals[b]);
+                addTriangle(triangles, grid[b], grid[c], grid[d], smoothNormals[b], smoothNormals[c], smoothNormals[d]);
+              } else {
+                addTriangle(triangles, grid[a], grid[c], grid[d], smoothNormals[a], smoothNormals[c], smoothNormals[d]);
+                addTriangle(triangles, grid[a], grid[d], grid[b], smoothNormals[a], smoothNormals[d], smoothNormals[b]);
+              }
+            }
+          }
+          displacementCount++;
+        }
+
+        if (triangles.length === 0) throw new Error("В BSP не найдена пригодная для отображения геометрия");
+        return {
+          data: new Float32Array(triangles),
+          bounds: { min, max },
+          faceCount,
+          displacementCount
+        };
+      }
+
+      function createBuffer(data, usage) {
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, data, usage);
+        return buffer;
+      }
+
+      function makeGrid() {
+        const { min, max } = bounds;
+        const extent = Math.max(max[0] - min[0], max[1] - min[1]);
+        const step = Math.pow(2, Math.floor(Math.log2(Math.max(extent / 16, 1))));
+        const z = min[2] - Math.max(extent * 0.015, 8);
+        const data = [];
+        const xStart = Math.floor(min[0] / step) * step;
+        const xEnd = Math.ceil(max[0] / step) * step;
+        const yStart = Math.floor(min[1] / step) * step;
+        const yEnd = Math.ceil(max[1] / step) * step;
+        for (let x = xStart; x <= xEnd; x += step) {
+          data.push(x, yStart, z, 0, 0, 1, x, yEnd, z, 0, 0, 1);
+        }
+        for (let y = yStart; y <= yEnd; y += step) {
+          data.push(xStart, y, z, 0, 0, 1, xEnd, y, z, 0, 0, 1);
+        }
+        pointCount = data.length / 6;
+        return new Float32Array(data);
+      }
+
+      function resize() {
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
+        const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        gl.viewport(0, 0, width, height);
+      }
+
+      function perspective(fov, aspect, near, far) {
+        const f = 1 / Math.tan(fov / 2);
+        const nf = 1 / (near - far);
+        return new Float32Array([
+          f / aspect, 0, 0, 0,
+          0, f, 0, 0,
+          0, 0, (far + near) * nf, -1,
+          0, 0, 2 * far * near * nf, 0
+        ]);
+      }
+
+      function lookAt(eye, center) {
+        let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
+        let len = Math.hypot(zx, zy, zz) || 1;
+        zx /= len; zy /= len; zz /= len;
+        let xx = -zy, xy = zx, xz = 0;
+        len = Math.hypot(xx, xy, xz) || 1;
+        xx /= len; xy /= len;
+        const yx = zy * xz - zz * xy;
+        const yy = zz * xx - zx * xz;
+        const yz = zx * xy - zy * xx;
+        return new Float32Array([
+          xx, yx, zx, 0,
+          xy, yy, zy, 0,
+          xz, yz, zz, 0,
+          -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
+          -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
+          -(zx * eye[0] + zy * eye[1] + zz * eye[2]), 1
+        ]);
+      }
+
+      function multiply(a, b) {
+        const out = new Float32Array(16);
+        for (let col = 0; col < 4; col++) {
+          for (let row = 0; row < 4; row++) {
+            out[col * 4 + row] = a[row] * b[col * 4] + a[4 + row] * b[col * 4 + 1] +
+              a[8 + row] * b[col * 4 + 2] + a[12 + row] * b[col * 4 + 3];
+          }
+        }
+        return out;
+      }
+
+      function invert(a) {
+        const out = new Float32Array(16);
+        const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+        const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+        const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+        const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+        const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10;
+        const b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11;
+        const b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+        const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30;
+        const b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31;
+        const b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+        let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+        if (!det) return null;
+        det = 1 / det;
+        out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+        out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+        out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+        out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+        out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+        out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+        out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+        out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+        out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+        out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+        out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+        out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+        out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+        out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+        out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+        out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+        return out;
+      }
+
+      function unproject(x, y, z, inverse) {
+        const w = inverse[3] * x + inverse[7] * y + inverse[11] * z + inverse[15];
+        return [
+          (inverse[0] * x + inverse[4] * y + inverse[8] * z + inverse[12]) / w,
+          (inverse[1] * x + inverse[5] * y + inverse[9] * z + inverse[13]) / w,
+          (inverse[2] * x + inverse[6] * y + inverse[10] * z + inverse[14]) / w
+        ];
+      }
+
+      function cameraState() {
+        const horizontal = radius * Math.cos(pitch);
+        const eye = [
+          target[0] + horizontal * Math.cos(yaw),
+          target[1] + horizontal * Math.sin(yaw),
+          target[2] + radius * Math.sin(pitch)
+        ];
+        const view = lookAt(eye, target);
+        const proj = perspective(Math.PI / 4, canvas.width / canvas.height, Math.max(radius / 10000, 0.1), radius * 20);
+        const viewProjection = multiply(proj, view);
+        return { eye, viewProjection };
+      }
+
+      function bindVertexBuffer(buffer) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.enableVertexAttribArray(locations.position);
+        gl.vertexAttribPointer(locations.position, 3, gl.FLOAT, false, 24, 0);
+        gl.enableVertexAttribArray(locations.normal);
+        gl.vertexAttribPointer(locations.normal, 3, gl.FLOAT, false, 24, 12);
+      }
+
+      function draw() {
+        resize();
+        gl.clearColor(0.055, 0.073, 0.09, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+        gl.disable(gl.CULL_FACE);
+        if (!meshBuffer) return;
+        const camera = cameraState();
+        gl.useProgram(program);
+        gl.uniformMatrix4fv(locations.viewProjection, false, camera.viewProjection);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gridBuffer);
+        gl.enableVertexAttribArray(locations.position);
+        gl.vertexAttribPointer(locations.position, 3, gl.FLOAT, false, 24, 0);
+        gl.enableVertexAttribArray(locations.normal);
+        gl.vertexAttribPointer(locations.normal, 3, gl.FLOAT, false, 24, 12);
+        gl.uniform3f(locations.color, 0.23, 0.28, 0.17);
+        gl.uniform1i(locations.lit, false);
+        gl.drawArrays(gl.LINES, 0, pointCount);
+
+        bindVertexBuffer(meshBuffer);
+        gl.uniform3f(locations.color, 0.55, 0.59, 0.43);
+        gl.uniform1i(locations.lit, true);
+        gl.drawArrays(gl.TRIANGLES, 0, mesh.data.length / 6);
+
+        if (selected) {
+          bindVertexBuffer(markerBuffer);
+          gl.uniform3f(locations.color, 0.75, 0.84, 0.48);
+          gl.uniform1i(locations.lit, false);
+          gl.drawArrays(gl.LINES, 0, 6);
+        }
+      }
+
+      function makeMarker(point) {
+        const size = Math.max(radius * 0.008, 5);
+        const data = new Float32Array([
+          point[0] - size, point[1], point[2], 0, 0, 1, point[0] + size, point[1], point[2], 0, 0, 1,
+          point[0], point[1] - size, point[2], 0, 0, 1, point[0], point[1] + size, point[2], 0, 0, 1,
+          point[0], point[1], point[2] - size, 0, 0, 1, point[0], point[1], point[2] + size, 0, 0, 1
+        ]);
+        if (markerBuffer) gl.deleteBuffer(markerBuffer);
+        markerBuffer = createBuffer(data, gl.STATIC_DRAW);
+      }
+
+      function rayTriangle(origin, direction, data, i) {
+        const ax = data[i], ay = data[i + 1], az = data[i + 2];
+        const e1x = data[i + 6] - ax, e1y = data[i + 7] - ay, e1z = data[i + 8] - az;
+        const e2x = data[i + 12] - ax, e2y = data[i + 13] - ay, e2z = data[i + 14] - az;
+        const px = direction[1] * e2z - direction[2] * e2y;
+        const py = direction[2] * e2x - direction[0] * e2z;
+        const pz = direction[0] * e2y - direction[1] * e2x;
+        const det = e1x * px + e1y * py + e1z * pz;
+        if (Math.abs(det) < 1e-8) return null;
+        const invDet = 1 / det;
+        const tx = origin[0] - ax, ty = origin[1] - ay, tz = origin[2] - az;
+        const u = (tx * px + ty * py + tz * pz) * invDet;
+        if (u < 0 || u > 1) return null;
+        const qx = ty * e1z - tz * e1y;
+        const qy = tz * e1x - tx * e1z;
+        const qz = tx * e1y - ty * e1x;
+        const v = (direction[0] * qx + direction[1] * qy + direction[2] * qz) * invDet;
+        if (v < 0 || u + v > 1) return null;
+        const t = (e2x * qx + e2y * qy + e2z * qz) * invDet;
+        return t >= 0 ? t : null;
+      }
+
+      function selectPoint(clientX, clientY) {
+        if (!mesh) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const y = 1 - ((clientY - rect.top) / rect.height) * 2;
+        const inverse = invert(cameraState().viewProjection);
+        if (!inverse) return;
+        const near = unproject(x, y, -1, inverse);
+        const far = unproject(x, y, 1, inverse);
+        const direction = [far[0] - near[0], far[1] - near[1], far[2] - near[2]];
+        const length = Math.hypot(...direction);
+        direction[0] /= length; direction[1] /= length; direction[2] /= length;
+        let nearest = Infinity;
+        let hit = null;
+        const data = mesh.data;
+        for (let i = 0; i < data.length; i += 18) {
+          const t = rayTriangle(near, direction, data, i);
+          if (t !== null && t < nearest) {
+            nearest = t;
+            hit = [near[0] + direction[0] * t, near[1] + direction[1] * t, near[2] + direction[2] * t];
+          }
+        }
+        if (!hit) {
+          status.textContent = "В этом месте нет поверхности карты";
+          return;
+        }
+        selected = hit;
+        makeMarker(hit);
+        $("coord-x").textContent = floatFormat.format(hit[0]);
+        $("coord-y").textContent = floatFormat.format(hit[1]);
+        $("coord-z").textContent = floatFormat.format(hit[2]);
+        $("copy").disabled = false;
+        status.textContent = "Точка выбрана";
+        draw();
+      }
+
+      function fitView() {
+        if (!bounds) return;
+        target = [
+          (bounds.min[0] + bounds.max[0]) / 2,
+          (bounds.min[1] + bounds.max[1]) / 2,
+          (bounds.min[2] + bounds.max[2]) / 2
+        ];
+        const size = [
+          bounds.max[0] - bounds.min[0],
+          bounds.max[1] - bounds.min[1],
+          bounds.max[2] - bounds.min[2]
+        ];
+        radius = Math.max(Math.hypot(...size) * 0.85, 100);
+        selected = null;
+        $("coord-x").textContent = "—";
+        $("coord-y").textContent = "—";
+        $("coord-z").textContent = "—";
+        $("copy").disabled = true;
+        draw();
+      }
+
+      async function openFile(file) {
+        if (!file) return;
+        $("empty").style.display = "none";
+        status.classList.remove("error");
+        status.textContent = `Читаю ${file.name}…`;
+        $("file").disabled = true;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        try {
+          status.textContent = "Строю геометрию…";
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          const parsed = await readGeometry(file);
+          if (meshBuffer) gl.deleteBuffer(meshBuffer);
+          if (gridBuffer) gl.deleteBuffer(gridBuffer);
+          mesh = { data: parsed.data };
+          bounds = parsed.bounds;
+          meshBuffer = createBuffer(mesh.data, gl.STATIC_DRAW);
+          gridBuffer = createBuffer(makeGrid(), gl.STATIC_DRAW);
+          fitView();
+          $("reset").disabled = false;
+          const triangleCount = parsed.data.length / 18;
+          $("stats").innerHTML =
+            `<div>Файл: <b>${escapeHtml(file.name)}</b></div>` +
+            `<div>Размер: <b>${(file.size / (1024 ** 2)).toFixed(1)} МБ</b></div>` +
+            `<div>Граней BSP: <b>${parsed.faceCount.toLocaleString("ru-RU")}</b></div>` +
+            `<div>Смещений: <b>${parsed.displacementCount.toLocaleString("ru-RU")}</b></div>` +
+            `<div>Треугольников: <b>${triangleCount.toLocaleString("ru-RU")}</b></div>`;
+          status.textContent = "Карта загружена · кликните по поверхности";
+          draw();
+        } catch (error) {
+          console.error(error);
+          status.textContent = error.message || "Не удалось прочитать карту";
+          status.classList.add("error");
+          if (!mesh) $("empty").style.display = "grid";
+        } finally {
+          $("file").disabled = false;
+        }
+      }
+
+      function escapeHtml(text) {
+        return text.replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        })[char]);
+      }
+
+      $("file").addEventListener("change", (event) => openFile(event.target.files[0]));
+      $("copy").addEventListener("click", async () => {
+        if (!selected) return;
+        const text = selected.map((value) => value.toFixed(3)).join(" ");
+        try {
+          await navigator.clipboard.writeText(text);
+          status.textContent = `Скопировано: ${text}`;
+        } catch (error) {
+          status.textContent = "Не удалось скопировать: разрешите доступ к буферу обмена";
+        }
+      });
+      $("reset").addEventListener("click", fitView);
+
+      canvas.addEventListener("pointerdown", (event) => {
+        if (!mesh) return;
+        const pan = event.button === 2 || event.shiftKey;
+        dragging = { x: event.clientX, y: event.clientY, pan, moved: false };
+        canvas.setPointerCapture(event.pointerId);
+      });
+      canvas.addEventListener("pointermove", (event) => {
+        if (!dragging) return;
+        const dx = event.clientX - dragging.x;
+        const dy = event.clientY - dragging.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) dragging.moved = true;
+        if (dragging.pan) {
+          const scale = radius * 0.0016;
+          target[0] += (Math.sin(yaw) * dx + Math.cos(yaw) * Math.sin(pitch) * dy) * scale;
+          target[1] += (-Math.cos(yaw) * dx + Math.sin(yaw) * Math.sin(pitch) * dy) * scale;
+          target[2] -= Math.cos(pitch) * dy * scale;
+        } else {
+          yaw -= dx * 0.006;
+          pitch = Math.max(-1.35, Math.min(1.35, pitch + dy * 0.006));
+        }
+        dragging.x = event.clientX;
+        dragging.y = event.clientY;
+        draw();
+      });
+      canvas.addEventListener("pointerup", (event) => {
+        if (dragging && !dragging.moved && !dragging.pan) selectPoint(event.clientX, event.clientY);
+        dragging = null;
+      });
+      canvas.addEventListener("pointercancel", () => { dragging = null; });
+      canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+      canvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        radius = Math.max(10, Math.min(radius * 20, radius * Math.exp(event.deltaY * 0.001)));
+        draw();
+      }, { passive: false });
+      window.addEventListener("resize", draw);
+
+      const viewport = $("viewport");
+      viewport.addEventListener("dragover", (event) => event.preventDefault());
+      viewport.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const file = event.dataTransfer.files[0];
+        if (file) openFile(file);
+      });
+
+      draw();
+    })();
+  </script>
+</body>
+</html>
