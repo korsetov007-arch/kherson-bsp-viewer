@@ -12,6 +12,7 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QPixmap>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QScrollArea>
