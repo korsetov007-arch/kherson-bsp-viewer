@@ -38,6 +38,10 @@ private:
     QString trackingStatus_ = QStringLiteral("Tracking not started");
     QString mapName_;
     bool targetEnabled_ = false;
+    bool targetLocked_ = false;
+    QPointF smoothedTargetScreen_;
+    bool hasSmoothedTargetScreen_ = false;
+    QElapsedTimer targetSmoothingClock_;
     bool landmarkEnabled_ = false;
     QVector3D landmarkWorldPosition_;
     QVector3D cameraPosition_;
