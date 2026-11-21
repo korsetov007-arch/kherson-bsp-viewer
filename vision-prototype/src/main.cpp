@@ -4,6 +4,7 @@
 #include "bsp_3d_view.hpp"
 #include "ballistics_view.hpp"
 #include "live_overlay.hpp"
+#include "cl_showpos_reader.hpp"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -36,6 +37,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -60,6 +62,9 @@ public:
         const QString savedLanguage = settings.value(QStringLiteral("language"), defaultLanguage).toString();
         bspvision::setUiLanguage(savedLanguage == QStringLiteral("ru")
             ? bspvision::UiLanguage::Russian : bspvision::UiLanguage::English);
+        screenCaptureTimer_ = new QTimer(this);
+        screenCaptureTimer_->setInterval(33);
+        connect(screenCaptureTimer_, &QTimer::timeout, this, [this] { pollClShowPosReader(); });
         createSettingsMenu();
         rebuildInterface();
         overlay_ = new bspvision::LiveOverlay();
@@ -131,6 +136,9 @@ private:
     }
 
     void rebuildInterface() {
+        if (screenCaptureTimer_) screenCaptureTimer_->stop();
+        screenReader_.stop();
+
         const auto value = [](QDoubleSpinBox *box, double fallback) {
             return box ? box->value() : fallback;
         };
@@ -156,6 +164,10 @@ private:
         ballisticsSummary_ = nullptr;
         liveStatusLabel_ = nullptr;
         liveTelemetryLabel_ = nullptr;
+        screenReaderStatusLabel_ = nullptr;
+        screenReaderEnabledCheck_ = nullptr;
+        screenCaptureX_ = screenCaptureY_ = screenCaptureWidth_ = screenCaptureHeight_ = nullptr;
+        useScreenPositionButton_ = nullptr;
         showSkyboxCheck_ = nullptr;
         currentYawInit_ = currentPitchInit_ = overlayFov_ = nullptr;
         originX_ = originY_ = originZ_ = nullptr;
@@ -409,6 +421,101 @@ private:
         connect(stopOverlay, &QPushButton::clicked, this, [this] { stopExternalOverlay(); });
         connect(overlayFov_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) { syncOverlay(); });
 
+        auto *screenGroup = new QGroupBox(
+            bspvision::uiText("Screen fallback · cl_showpos (no Lua)", "Резервный экранный канал · cl_showpos (без Lua)"), tab);
+        auto *screenLayout = new QVBoxLayout(screenGroup);
+        QSettings screenSettings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+        QScreen *primary = QGuiApplication::primaryScreen();
+        const QSize primarySize = primary ? primary->size() : QSize(1920, 1080);
+
+        screenReaderEnabledCheck_ = new QCheckBox(
+            bspvision::uiText("Enable DXGI template reader", "Включить шаблонное распознавание через DXGI"), screenGroup);
+        screenReaderEnabledCheck_->setChecked(screenSettings.value(QStringLiteral("clShowPos/enabled"), false).toBool());
+        screenLayout->addWidget(screenReaderEnabledCheck_);
+
+        auto *cropRow = new QHBoxLayout();
+        const auto makeScreenField = [screenGroup](int minimum, int maximum, int value) {
+            auto *field = new QSpinBox(screenGroup);
+            field->setRange(minimum, maximum);
+            field->setValue(value);
+            field->setMaximumWidth(100);
+            return field;
+        };
+        screenCaptureX_ = makeScreenField(0, 32768, screenSettings.value(QStringLiteral("clShowPos/x"), 0).toInt());
+        screenCaptureY_ = makeScreenField(0, 16384, screenSettings.value(QStringLiteral("clShowPos/y"), 0).toInt());
+        screenCaptureWidth_ = makeScreenField(200, 4096,
+            screenSettings.value(QStringLiteral("clShowPos/width"), std::min(640, primarySize.width())).toInt());
+        screenCaptureHeight_ = makeScreenField(45, 512,
+            screenSettings.value(QStringLiteral("clShowPos/height"), std::min(100, primarySize.height())).toInt());
+
+        cropRow->addWidget(new QLabel(QStringLiteral("X"), screenGroup));
+        cropRow->addWidget(screenCaptureX_);
+        cropRow->addWidget(new QLabel(QStringLiteral("Y"), screenGroup));
+        cropRow->addWidget(screenCaptureY_);
+        cropRow->addWidget(new QLabel(bspvision::uiText("Width", "Ширина"), screenGroup));
+        cropRow->addWidget(screenCaptureWidth_);
+        cropRow->addWidget(new QLabel(bspvision::uiText("Height", "Высота"), screenGroup));
+        cropRow->addWidget(screenCaptureHeight_);
+        auto *startScreenReader = new QPushButton(
+            bspvision::uiText("Apply crop / start", "Применить область / запуск"), screenGroup);
+        auto *stopScreenReader = new QPushButton(
+            bspvision::uiText("Stop", "Остановить"), screenGroup);
+        cropRow->addWidget(startScreenReader);
+        cropRow->addWidget(stopScreenReader);
+        cropRow->addStretch();
+        screenLayout->addLayout(cropRow);
+
+        screenReaderStatusLabel_ = new QLabel(
+            bspvision::uiText(
+                "Uses the primary monitor. Enable cl_showpos 1 in the game; the crop must include pos:, ang: and vel:.",
+                "Используется основной монитор. Включите cl_showpos 1; область должна включать строки pos:, ang: и vel:."), screenGroup);
+        screenReaderStatusLabel_->setWordWrap(true);
+        screenLayout->addWidget(screenReaderStatusLabel_);
+
+        useScreenPositionButton_ = new QPushButton(
+            bspvision::uiText("Use last pos as launch point", "Использовать pos как точку запуска"), screenGroup);
+        useScreenPositionButton_->setEnabled(false);
+        screenLayout->addWidget(useScreenPositionButton_);
+        auto *screenNote = new QLabel(
+            bspvision::uiText(
+                "The reader uses classic pixel-template matching, not OCR/NN. pos is Source MainViewOrigin and may differ from the weapon muzzle; verify it before using it as the launch point.",
+                "Чтение выполняется по пиксельным шаблонам, без OCR/нейросети. pos — это MainViewOrigin Source, он может отличаться от дульного среза; проверьте координаты перед использованием."), screenGroup);
+        screenNote->setWordWrap(true);
+        screenLayout->addWidget(screenNote);
+        layout->addWidget(screenGroup);
+
+        const auto persistScreenCrop = [this] {
+            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            if (screenCaptureX_) settings.setValue(QStringLiteral("clShowPos/x"), screenCaptureX_->value());
+            if (screenCaptureY_) settings.setValue(QStringLiteral("clShowPos/y"), screenCaptureY_->value());
+            if (screenCaptureWidth_) settings.setValue(QStringLiteral("clShowPos/width"), screenCaptureWidth_->value());
+            if (screenCaptureHeight_) settings.setValue(QStringLiteral("clShowPos/height"), screenCaptureHeight_->value());
+        };
+        for (QSpinBox *field : {screenCaptureX_, screenCaptureY_, screenCaptureWidth_, screenCaptureHeight_}) {
+            connect(field, qOverload<int>(&QSpinBox::valueChanged), this, [persistScreenCrop](int) { persistScreenCrop(); });
+        }
+        connect(screenReaderEnabledCheck_, &QCheckBox::toggled, this, [this](bool enabled) {
+            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            settings.setValue(QStringLiteral("clShowPos/enabled"), enabled);
+            if (enabled) startClShowPosReader();
+            else stopClShowPosReader();
+        });
+        connect(startScreenReader, &QPushButton::clicked, this, [this] { startClShowPosReader(); });
+        connect(stopScreenReader, &QPushButton::clicked, this, [this] { stopClShowPosReader(); });
+        connect(useScreenPositionButton_, &QPushButton::clicked, this, [this] {
+            ClShowPosSample sample;
+            if (!screenReader_.latestSample(&sample) || !originX_ || !originY_ || !originZ_) return;
+            originX_->setValue(sample.position.x());
+            originY_->setValue(sample.position.y());
+            originZ_->setValue(sample.position.z());
+            statusBar()->showMessage(bspvision::uiText(
+                "Copied cl_showpos position. Verify camera-origin vs muzzle offset for this vehicle.",
+                "Координаты pos скопированы. Проверьте смещение камеры относительно орудия этой техники."));
+        });
+        if (screenReaderEnabledCheck_->isChecked()) {
+            QTimer::singleShot(0, this, [this] { startClShowPosReader(); });
+        }
+
         auto *launchGroup = new QGroupBox(bspvision::uiText("Launch point · Source world units", "Точка запуска · единицы Source"), tab);
         auto *launchForm = new QFormLayout(launchGroup);
         originX_ = makeCoordinate(0.0, launchGroup);
@@ -519,6 +626,70 @@ private:
             connect(field, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
                     [invalidateSolution](double) { invalidateSolution(); });
         }
+    }
+
+    void startClShowPosReader() {
+        if (screenReaderEnabledCheck_ && !screenReaderEnabledCheck_->isChecked()) {
+            screenReaderEnabledCheck_->setChecked(true);
+            return; // The toggled handler performs the initial start.
+        }
+        if (!screenCaptureX_ || !screenCaptureY_ || !screenCaptureWidth_ || !screenCaptureHeight_) return;
+
+        const QRect region(screenCaptureX_->value(), screenCaptureY_->value(),
+                           screenCaptureWidth_->value(), screenCaptureHeight_->value());
+        QString error;
+        if (!screenReader_.start(region, &error)) {
+            if (screenReaderStatusLabel_) screenReaderStatusLabel_->setText(error);
+            if (screenCaptureTimer_) screenCaptureTimer_->stop();
+            syncOverlay();
+            return;
+        }
+        if (screenCaptureTimer_) screenCaptureTimer_->start();
+        if (screenReaderStatusLabel_) screenReaderStatusLabel_->setText(screenReader_.lastStatus());
+        if (useScreenPositionButton_) useScreenPositionButton_->setEnabled(false);
+        syncOverlay();
+    }
+
+    void stopClShowPosReader() {
+        if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked()) {
+            screenReaderEnabledCheck_->setChecked(false);
+            return; // The toggled handler performs the stop.
+        }
+        if (screenCaptureTimer_) screenCaptureTimer_->stop();
+        screenReader_.stop();
+        if (screenReaderStatusLabel_) screenReaderStatusLabel_->setText(screenReader_.lastStatus());
+        if (useScreenPositionButton_) useScreenPositionButton_->setEnabled(false);
+        syncOverlay();
+    }
+
+    void pollClShowPosReader() {
+        if (!screenReader_.isRunning()) return;
+        ClShowPosSample sample;
+        QString status;
+        if (screenReader_.poll(&sample, &status)) {
+            if (!bridgeConnected_) {
+                if (currentYawInit_) currentYawInit_->setValue(sample.angles.y());
+                if (currentPitchInit_) currentPitchInit_->setValue(sample.angles.x());
+            }
+            if (useScreenPositionButton_) useScreenPositionButton_->setEnabled(true);
+            if (liveTelemetryLabel_ && !bridgeConnected_) {
+                liveTelemetryLabel_->setText(
+                    QStringLiteral("cl_showpos · pos (%1, %2, %3) · ang p/y/r (%4, %5, %6) · confidence %7%")
+                    .arg(sample.position.x(), 0, 'f', 2)
+                    .arg(sample.position.y(), 0, 'f', 2)
+                    .arg(sample.position.z(), 0, 'f', 2)
+                    .arg(sample.angles.x(), 0, 'f', 2)
+                    .arg(sample.angles.y(), 0, 'f', 2)
+                    .arg(sample.angles.z(), 0, 'f', 2)
+                    .arg(qRound(sample.confidence * 100.0)));
+            }
+        }
+        if (screenReaderStatusLabel_) {
+            const QString nextStatus = status.isEmpty() ? screenReader_.lastStatus() : status;
+            if (screenReaderStatusLabel_->text() != nextStatus)
+                screenReaderStatusLabel_->setText(nextStatus);
+        }
+        syncOverlay();
     }
 
     void calculateArc(bool solveTarget, bool highArc = false) {
@@ -657,7 +828,17 @@ private:
         overlay_->setTargetDetails(range, flightTime_ ? flightTime_->value() : 0.0, loadedMapName_);
         const bool enabled = targetDefined_ && trajectoryCalculated_;
         overlay_->setTargetEnabled(enabled);
-        const QString state = bridgeConnected_ ? QStringLiteral("Native bridge connected") : QStringLiteral("Waiting for native bridge");
+        QString state;
+        if (bridgeConnected_) {
+            state = QStringLiteral("Native bridge connected");
+        } else if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked()) {
+            ClShowPosSample sample;
+            state = screenReader_.latestSample(&sample)
+                ? QStringLiteral("Screen telemetry active (cl_showpos)")
+                : screenReader_.lastStatus();
+        } else {
+            state = QStringLiteral("Waiting for Native Bridge or cl_showpos fallback");
+        }
         if (liveStatusLabel_) liveStatusLabel_->setText(state);
         if (bridgeSocket_ && bridgeSocket_->state() == QLocalSocket::ConnectedState
             && QDateTime::currentMSecsSinceEpoch() - lastBridgeCommandMs_ >= 100) {
@@ -717,9 +898,16 @@ private:
     QDoubleSpinBox *targetX_ = nullptr, *targetY_ = nullptr, *targetZ_ = nullptr;
     QDoubleSpinBox *speed_ = nullptr, *gravity_ = nullptr, *yaw_ = nullptr, *pitch_ = nullptr, *flightTime_ = nullptr;
     QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
+    QLabel *screenReaderStatusLabel_ = nullptr;
+    QCheckBox *screenReaderEnabledCheck_ = nullptr;
+    QSpinBox *screenCaptureX_ = nullptr, *screenCaptureY_ = nullptr;
+    QSpinBox *screenCaptureWidth_ = nullptr, *screenCaptureHeight_ = nullptr;
+    QPushButton *useScreenPositionButton_ = nullptr;
     QDoubleSpinBox *currentYawInit_ = nullptr, *currentPitchInit_ = nullptr;
     QDoubleSpinBox *overlayFov_ = nullptr;
     QTimer *overlayTimer_ = nullptr;
+    QTimer *screenCaptureTimer_ = nullptr;
+    bspvision::ClShowPosReader screenReader_;
     bspvision::LiveOverlay *overlay_ = nullptr;
     QLocalServer *bridgeServer_ = nullptr;
     QLocalSocket *bridgeSocket_ = nullptr;
