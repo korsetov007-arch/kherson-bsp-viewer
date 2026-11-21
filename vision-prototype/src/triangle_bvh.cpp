@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <utility>
 
 namespace bspvision {
 namespace {
@@ -86,7 +87,7 @@ bool TriangleBvh::build(const QVector<BspPolygon> &polygons, QString *error) {
     primitiveOrder_.resize(triangles_.size());
     std::iota(primitiveOrder_.begin(), primitiveOrder_.end(), 0);
     nodes_.reserve(triangles_.size() / 4 + 1);
-    buildNode(0, primitiveOrder_.size());
+    buildNode(0, static_cast<int>(primitiveOrder_.size()));
 
     if (error) error->clear();
     return isValid();
@@ -111,7 +112,7 @@ int TriangleBvh::buildNode(int first, int last) {
         centroidMax = componentMax(centroidMax, triangle.centroid);
     }
 
-    const int nodeIndex = nodes_.size();
+    const int nodeIndex = static_cast<int>(nodes_.size());
     nodes_.push_back(node);
     const int count = last - first;
     constexpr int kLeafTriangleCount = 8;
