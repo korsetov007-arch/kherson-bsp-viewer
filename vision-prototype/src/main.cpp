@@ -535,6 +535,24 @@ private:
             ballisticsSummary_->setText(bspvision::uiText("Trajectory and overlay target cleared.", "Траектория и цель оверлея очищены."));
             syncOverlay();
         });
+
+        auto invalidateSolution = [this] {
+            trajectoryCalculated_ = false;
+            if (ballisticsSummary_) {
+                ballisticsSummary_->setText(bspvision::uiText(
+                    "Parameters changed. Recalculate the trajectory to refresh the overlay.",
+                    "Параметры изменены. Пересчитайте траекторию, чтобы обновить оверлей."));
+            }
+            syncOverlay();
+        };
+        const QList<QDoubleSpinBox *> solutionInputs = {
+            originX_, originY_, originZ_, targetX_, targetY_, targetZ_,
+            speed_, gravity_, yaw_, pitch_, flightTime_
+        };
+        for (QDoubleSpinBox *field : solutionInputs) {
+            connect(field, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+                    [invalidateSolution](double) { invalidateSolution(); });
+        }
     }
 
     void calculateArc(bool solveTarget, bool highArc = false) {
@@ -650,9 +668,13 @@ private:
                                   "Ожидался текст вида: setpos X Y Z; setang PITCH YAW ROLL."));
             return;
         }
+        if (mouseTracker_.enabled()) {
+            mouseTracker_.start(currentYawInit_->value(), currentPitchInit_->value(),
+                                sensitivity_->value(), mYaw_->value(), mPitch_->value());
+        }
         liveStatusLabel_->setText(bspvision::uiText(
-            "getpos loaded. Origin and initial view angles were filled where present; start the overlay after selecting a target and solving an arc.",
-            "getpos загружен. Координаты и исходные углы заполнены, если они были в выводе. Выберите цель, рассчитайте траекторию и запустите оверлей."));
+            "getpos loaded. Origin and initial view angles were filled where present. If the overlay is running, its angle estimate was re-anchored.",
+            "getpos загружен. Координаты и исходные углы заполнены. Если оверлей работает, его оценка углов сброшена на новые значения."));
         syncOverlay();
     }
 
