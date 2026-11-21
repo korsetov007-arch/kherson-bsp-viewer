@@ -11,6 +11,7 @@ local ADDON = "source_bsp_geometry_lab"
 local SEND_INTERVAL = 0.10
 local lastSend = 0
 local latestTelemetry = nil
+local renderCamera = nil
 local target = nil
 
 local function vec(v)
@@ -50,9 +51,9 @@ local function collectTelemetry()
         schema = 1,
         player = {
             position = vec(ply:GetPos()),
-            eye_position = vec(EyePos()),
-            eye_angles = angle(EyeAngles()),
-            eye_vector = vec(EyeVector()),
+            eye_position = renderCamera and renderCamera.position or nil,
+            eye_angles = renderCamera and renderCamera.angles or angle(ply:EyeAngles()),
+            eye_vector = renderCamera and renderCamera.vector or nil,
             fov = ply:GetFOV()
         },
         lvs = {
@@ -64,6 +65,14 @@ local function collectTelemetry()
         }
     }
 end
+
+hook.Add("PreDrawTranslucentRenderables", "SBGL_CaptureRenderCamera", function()
+    renderCamera = {
+        position = vec(EyePos()),
+        angles = angle(EyeAngles()),
+        vector = vec(EyeVector())
+    }
+end)
 
 timer.Create("SBGL_BridgeTelemetry", SEND_INTERVAL, 0, function()
     local now = RealTime()
