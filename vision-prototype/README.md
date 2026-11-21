@@ -11,11 +11,11 @@ Bilingual Windows desktop tool for inspecting Source Engine BSP v20 geometry and
 - Select X/Y coordinates by clicking the map. Enter Z manually to choose the correct floor.
 - Plan a projectile path in XY, XZ and oblique 3D views, and solve for low or high ideal ballistic arcs.
 - Run synthetic BSP parser tests with CTest.
-- Optional clientside Garry's Mod link: choose the game's `garrysmod/data` directory to exchange telemetry and live aim-marker data; no server addon is required. See [the bilingual addon guide](../gmod-addon/README.md).
+- Optional transparent external overlay drawn by the desktop app. It uses Windows Raw Input to estimate yaw/pitch from mouse deltas; no Garry's Mod addon or server-side access is needed. See [the bilingual overlay guide](../docs/EXTERNAL_OVERLAY_RU_EN.md).
 
 ## Limitations
 
-Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics.
+Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics. The external overlay estimates angles from raw mouse deltas and user-entered starting angles; it is not internal game telemetry and can drift if controls, cameras, sensitivity or FOV change.
 
 ## Build on Windows
 
@@ -38,6 +38,6 @@ ctest --test-dir build -C Release --output-on-failure
 3. Leave **Show skybox surfaces / Показывать поверхности скайбокса** unchecked first. Enable it only to inspect those faces.
 4. Use **Top-down XY / Сверху XY** to select horizontal coordinates, or **Orbit 3D / 3D-орбита** to rotate with the left mouse button and zoom with the wheel.
 5. Open **Ballistic lab / Баллистика**, enter/select the target coordinates, then calculate the current arc or solve for the low/high arc. The Z coordinate must be entered manually.
-6. For the optional live HUD, install the client addon from `gmod-addon/source_bsp_geometry_lab`, select the game's `garrysmod/data` folder in **Garry's Mod live link**, and load a BSP whose filename matches the current in-game map. Then select a target and solve an arc. Use `sbgl_hud_toggle` in the game console to toggle the marker. Details: [addon guide](../gmod-addon/README.md).
+6. For the optional external overlay, use **Paste getpos from clipboard** to fill launch coordinates and initial yaw/pitch, select a target and solve an arc, adjust sensitivity/`m_yaw`/`m_pitch` and horizontal FOV, then click **Start overlay**. Switch back to the game. Use **Stop overlay** to close it. Details: [overlay guide](../docs/EXTERNAL_OVERLAY_RU_EN.md).
 
 For the detailed Russian/English user manual, see `docs/USER_MANUAL.md`.
