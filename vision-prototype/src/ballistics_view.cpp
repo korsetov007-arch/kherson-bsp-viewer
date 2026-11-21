@@ -1,4 +1,5 @@
 #include "ballistics_view.hpp"
+#include "app_language.hpp"
 
 #include <QPainter>
 #include <QPaintEvent>
@@ -79,7 +80,8 @@ void BallisticsView::paintEvent(QPaintEvent *event) {
             b.maxZ = std::max(b.maxZ, static_cast<double>(v.z()));
         }
     };
-    for (const auto &v : vertices_) include(asVector(v));
+    for (const BspPolygon &face : polygons_)
+        for (const BspVertex &v : face.vertices) include(asVector(v));
     for (const auto &v : trajectory_) include(v);
     if (!haveBounds) { b = {}; }
     const double padX = std::max(32.0, (b.maxX - b.minX) * 0.06);
@@ -98,14 +100,14 @@ void BallisticsView::paintEvent(QPaintEvent *event) {
         QRectF(gap * 2 + panelW, top, panelW, panelH),
         QRectF(gap * 3 + panelW * 2, top, panelW, panelH)
     };
-    const QString titles[3] = {QStringLiteral("XY · PLAN"), QStringLiteral("XZ · ELEVATION"),
-                               QStringLiteral("3D · TRAJECTORY")};
+    const QString titles[3] = {uiText("XY · PLAN", "XY · ПЛАН"), uiText("XZ · ELEVATION", "XZ · ВИД СБОКУ"),
+                               uiText("3D · TRAJECTORY", "3D · ТРАЕКТОРИЯ")};
     const QString axes[3] = {QStringLiteral("X →   Y ↑"), QStringLiteral("X →   Z ↑"),
                              QStringLiteral("X / Y / Z")};
 
     p.setPen(QColor(222, 227, 235));
     p.drawText(QRectF(12, 5, width() - 24, 24), Qt::AlignLeft | Qt::AlignVCenter,
-        QStringLiteral("BALLISTIC LAB  ·  world units  ·  green = launch, red = target, amber = path"));
+        uiText("BALLISTIC LAB  ·  world units  ·  green = launch, red = target, amber = path", "БАЛЛИСТИКА  ·  единицы мира  ·  зелёный = старт, красный = цель, янтарный = траектория"));
 
     for (int mode = 0; mode < 3; ++mode) {
         const QRectF panel = panels[mode];
@@ -183,8 +185,8 @@ void BallisticsView::paintEvent(QPaintEvent *event) {
     if (trajectory_.isEmpty()) {
         p.setPen(QColor(220, 225, 233));
         p.drawText(rect().adjusted(20, 40, -20, -20), Qt::AlignCenter | Qt::TextWordWrap,
-            QStringLiteral("Set launch coordinates and speed, then calculate or solve for a target. "
-                           "The three panels show top-down XY, side elevation XZ, and an oblique 3D projection."));
+            uiText("Set launch coordinates and speed, then calculate or solve for a target. The three panels show top-down XY, side elevation XZ, and an oblique 3D projection.",
+                   "Задайте координаты старта и скорость, затем рассчитайте траекторию или решите задачу для цели. Три панели показывают XY сверху, XZ сбоку и наклонную 3D-проекцию."));
     }
 }
 
