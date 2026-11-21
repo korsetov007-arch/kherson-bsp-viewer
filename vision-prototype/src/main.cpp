@@ -900,7 +900,6 @@ private:
             statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set launch X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y запуска; координату Z задайте во вкладке баллистики."));
         });
         connect(pickTarget, &QPushButton::clicked, this, [this, tabs] {
-            landmarkPickMode_ = false;
             pickMode_ = 2;
             tabs->setCurrentIndex(0);
             statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set target X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y цели; координату Z задайте во вкладке баллистики."));
@@ -1258,29 +1257,236 @@ private:
         syncOverlay();
     }
 
+    enum class AutoAimStage { Disabled, ProbeYaw, WaitYaw, ProbePitch, WaitPitch, Active };
+
+    static double angleDifference(double target, double current) {
+        double delta = std::fmod(target - current + 540.0, 360.0);
+        if (delta < 0.0) delta += 360.0;
+        return delta - 180.0;
+    }
+
+    bool isGarrysModForeground() const {
+#if defined(Q_OS_WIN)
+        const HWND foreground = GetForegroundWindow();
+        if (!foreground) return false;
+        DWORD processId = 0;
+        GetWindowThreadProcessId(foreground, &processId);
+        if (!processId) return false;
+        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+        if (!process) return false;
+        wchar_t imagePath[32768] = {};
+        DWORD pathLength = static_cast<DWORD>(sizeof(imagePath) / sizeof(imagePath[0]));
+        const BOOL ok = QueryFullProcessImageNameW(process, 0, imagePath, &pathLength);
+        CloseHandle(process);
+        if (!ok) return false;
+        const QString executable =
+            QFileInfo(QString::fromWCharArray(imagePath, static_cast<qsizetype>(pathLength))).fileName();
+        return executable.compare(QStringLiteral("gmod.exe"), Qt::CaseInsensitive) == 0;
+#else
+        return false;
+#endif
+    }
+
+    bool sendRelativeMouse(int dx, int dy) {
+#if defined(Q_OS_WIN)
+        if (dx == 0 && dy == 0) return true;
+        INPUT input = {};
+        input.type = INPUT_MOUSE;
+        input.mi.dx = dx;
+        input.mi.dy = dy;
+        input.mi.dwFlags = MOUSEEVENTF_MOVE;
+        return SendInput(1, &input, sizeof(INPUT)) == 1;
+#else
+        Q_UNUSED(dx);
+        Q_UNUSED(dy);
+        return false;
+#endif
+    }
+
+    void stopAutoAim(const QString &reason) {
+        autoAimEnabled_ = false;
+        autoAimStage_ = AutoAimStage::Disabled;
+        autoAimStatus_ = reason;
+        syncOverlay();
+    }
+
     void toggleAutoAim() {
-        if (!hasLandmark_) {
-            statusBar()->showMessage(bspvision::uiText(
-                "Set an aiming landmark first: BSP geometry → Pick aiming circle…",
-                "Сначала задайте ориентир: Геометрия BSP → «Задать круг-ориентир…»."));
+        if (autoAimEnabled_) {
+            stopAutoAim(bspvision::uiText("AUTO AIM OFF · manual control restored.",
+                                          "АВТОСУО ВЫКЛ · ручное управление восстановлено."));
+            statusBar()->showMessage(autoAimStatus_);
             return;
         }
-        landmarkTrackingEnabled_ = !landmarkTrackingEnabled_;
-        if (landmarkTrackingEnabled_) {
-            if (screenReaderEnabledCheck_ && !screenReaderEnabledCheck_->isChecked())
-                screenReaderEnabledCheck_->setChecked(true);
-            else if (!screenReader_.isRunning())
-                startClShowPosReader();
-            if (overlay_ && !overlay_->isVisible()) startExternalOverlay();
-        } else if (overlay_ && !(targetDefined_ && trajectoryCalculated_)) {
-            overlay_->hide();
+        if (!targetDefined_ || !trajectoryCalculated_) {
+            statusBar()->showMessage(bspvision::uiText(
+                "Calculate a ballistic solution first, then press F7 in Garry's Mod.",
+                "Сначала рассчитайте траекторию, затем нажмите F7 в Garry's Mod."));
+            return;
         }
+#if defined(Q_OS_WIN)
+        if (!isGarrysModForeground()) {
+            statusBar()->showMessage(bspvision::uiText(
+                "Focus the Garry's Mod game window before enabling auto aim.",
+                "Перед включением автодоводки переключитесь на окно Garry's Mod."));
+            return;
+        }
+        if (!screenReader_.isRunning()) startClShowPosReader();
+        if (!screenReader_.isRunning()) {
+            statusBar()->showMessage(bspvision::uiText(
+                "cl_showpos reader is not running. Enable it and select the pos:/ang: crop first.",
+                "Не запущено чтение cl_showpos. Сначала включите его и выделите строки pos:/ang:."));
+            return;
+        }
+        autoAimEnabled_ = true;
+        autoAimStage_ = AutoAimStage::ProbeYaw;
+        autoAimProbeAttempts_ = 0;
+        autoAimProbeWaitTicks_ = 0;
+        mouseYawDegreesPerCount_ = 0.0;
+        mousePitchDegreesPerCount_ = 0.0;
+        autoAimStatus_ = bspvision::uiText(
+            "AUTO AIM · calibrating mouse response (keep Garry's Mod focused)",
+            "АВТОСУО · калибровка мыши (не переключайтесь из Garry's Mod)");
+        if (overlay_ && !overlay_->isVisible()) startExternalOverlay();
         syncOverlay();
-        statusBar()->showMessage(landmarkTrackingEnabled_
-            ? bspvision::uiText("Aiming circle ON. It turns green when the crosshair is inside it. F7 hides it.",
-                                "Круг наведения ВКЛ. Он зеленеет, когда прицел попадает внутрь. F7 — скрыть.")
-            : bspvision::uiText("Aiming circle OFF. Press F7 to show it again.",
-                                "Круг наведения ВЫКЛ. Нажмите F7, чтобы показать снова."));
+        statusBar()->showMessage(bspvision::uiText(
+            "Auto fire control enabled. F7 again immediately restores manual control.",
+            "Автоматическая СУО включена. Повторное F7 немедленно вернёт ручное управление."));
+#else
+        statusBar()->showMessage(bspvision::uiText(
+            "Automatic mouse control is currently supported only on Windows.",
+            "Автоматическое управление мышью сейчас поддерживается только в Windows."));
+#endif
+    }
+
+    void processAutoAimSample(const bspvision::ClShowPosSample &sample) {
+        if (!autoAimEnabled_ || !yaw_ || !pitch_) return;
+#if defined(Q_OS_WIN)
+        if (!isGarrysModForeground()) {
+            autoAimStatus_ = bspvision::uiText(
+                "AUTO AIM PAUSED · Garry's Mod is not foreground",
+                "АВТОСУО ПАУЗА · окно Garry's Mod неактивно");
+            return; // Never inject mouse input into another application.
+        }
+        if (sample.confidence < 0.72) {
+            autoAimStatus_ = bspvision::uiText(
+                "AUTO AIM HOLD · cl_showpos confidence is too low",
+                "АВТОСУО ОЖИДАНИЕ · низкая точность чтения cl_showpos");
+            return;
+        }
+
+        constexpr int probeCounts = 10;
+        if (autoAimStage_ == AutoAimStage::ProbeYaw) {
+            autoAimProbeYaw_ = sample.angles.y();
+            if (!sendRelativeMouse(probeCounts, 0)) {
+                stopAutoAim(bspvision::uiText("AUTO AIM ERROR · mouse input was rejected.",
+                                              "ОШИБКА АВТОСУО · система отклонила ввод мыши."));
+                return;
+            }
+            autoAimProbeWaitTicks_ = 0;
+            autoAimStage_ = AutoAimStage::WaitYaw;
+            autoAimStatus_ = bspvision::uiText("AUTO AIM · measuring horizontal response",
+                                               "АВТОСУО · измерение горизонтального отклика");
+            return;
+        }
+        if (autoAimStage_ == AutoAimStage::WaitYaw) {
+            ++autoAimProbeWaitTicks_;
+            const double response = angleDifference(sample.angles.y(), autoAimProbeYaw_);
+            if (std::abs(response) >= 0.004 && std::abs(response) < 20.0) {
+                mouseYawDegreesPerCount_ = response / static_cast<double>(probeCounts);
+                autoAimProbeAttempts_ = 0;
+                autoAimStage_ = AutoAimStage::ProbePitch;
+            } else if (autoAimProbeWaitTicks_ >= 3) {
+                if (autoAimProbeAttempts_ < 2) {
+                    ++autoAimProbeAttempts_;
+                    autoAimProbeYaw_ = sample.angles.y();
+                    if (!sendRelativeMouse(probeCounts, 0)) {
+                        stopAutoAim(bspvision::uiText("AUTO AIM ERROR · cannot calibrate mouse.",
+                                                      "ОШИБКА АВТОСУО · не удалось откалибровать мышь."));
+                        return;
+                    }
+                    autoAimProbeWaitTicks_ = 0;
+                } else {
+                    stopAutoAim(bspvision::uiText(
+                        "AUTO AIM FAILED · yaw did not respond to mouse input.",
+                        "АВТОСУО НЕ ЗАПУЩЕНА · угол yaw не реагирует на мышь."));
+                    return;
+                }
+            }
+            return;
+        }
+        if (autoAimStage_ == AutoAimStage::ProbePitch) {
+            autoAimProbePitch_ = sample.angles.x();
+            if (!sendRelativeMouse(0, probeCounts)) {
+                stopAutoAim(bspvision::uiText("AUTO AIM ERROR · mouse input was rejected.",
+                                              "ОШИБКА АВТОСУО · система отклонила ввод мыши."));
+                return;
+            }
+            autoAimProbeWaitTicks_ = 0;
+            autoAimStage_ = AutoAimStage::WaitPitch;
+            autoAimStatus_ = bspvision::uiText("AUTO AIM · measuring vertical response",
+                                               "АВТОСУО · измерение вертикального отклика");
+            return;
+        }
+        if (autoAimStage_ == AutoAimStage::WaitPitch) {
+            ++autoAimProbeWaitTicks_;
+            const double response = sample.angles.x() - autoAimProbePitch_;
+            if (std::abs(response) >= 0.004 && std::abs(response) < 20.0) {
+                mousePitchDegreesPerCount_ = response / static_cast<double>(probeCounts);
+                autoAimStage_ = AutoAimStage::Active;
+            } else if (autoAimProbeWaitTicks_ >= 3) {
+                if (autoAimProbeAttempts_ < 2) {
+                    ++autoAimProbeAttempts_;
+                    autoAimProbePitch_ = sample.angles.x();
+                    if (!sendRelativeMouse(0, probeCounts)) {
+                        stopAutoAim(bspvision::uiText("AUTO AIM ERROR · cannot calibrate mouse.",
+                                                      "ОШИБКА АВТОСУО · не удалось откалибровать мышь."));
+                        return;
+                    }
+                    autoAimProbeWaitTicks_ = 0;
+                } else {
+                    stopAutoAim(bspvision::uiText(
+                        "AUTO AIM FAILED · pitch did not respond to mouse input.",
+                        "АВТОСУО НЕ ЗАПУЩЕНА · угол pitch не реагирует на мышь."));
+                    return;
+                }
+            }
+            return;
+        }
+        if (autoAimStage_ == AutoAimStage::Active) {
+            if (std::abs(mouseYawDegreesPerCount_) < 0.0002 ||
+                std::abs(mousePitchDegreesPerCount_) < 0.0002) {
+                stopAutoAim(bspvision::uiText("AUTO AIM STOPPED · invalid mouse calibration.",
+                                              "АВТОСУО ОСТАНОВЛЕНА · некорректная калибровка мыши."));
+                return;
+            }
+            const double yawError = angleDifference(yaw_->value(), sample.angles.y());
+            const double pitchError = -pitch_->value() - sample.angles.x();
+            constexpr double deadbandDegrees = 0.08;
+            constexpr double proportionalGain = 0.62;
+            constexpr int maxCountsPerSample = 32;
+            const int mouseX = std::abs(yawError) <= deadbandDegrees ? 0 :
+                std::clamp(static_cast<int>(std::lround(
+                    (yawError / mouseYawDegreesPerCount_) * proportionalGain)),
+                    -maxCountsPerSample, maxCountsPerSample);
+            const int mouseY = std::abs(pitchError) <= deadbandDegrees ? 0 :
+                std::clamp(static_cast<int>(std::lround(
+                    (pitchError / mousePitchDegreesPerCount_) * proportionalGain)),
+                    -maxCountsPerSample, maxCountsPerSample);
+            if ((mouseX != 0 || mouseY != 0) && !sendRelativeMouse(mouseX, mouseY)) {
+                stopAutoAim(bspvision::uiText("AUTO AIM ERROR · mouse input failed.",
+                                              "ОШИБКА АВТОСУО · не удалось отправить движение мыши."));
+                return;
+            }
+            const bool onTarget = std::abs(yawError) <= 0.25 && std::abs(pitchError) <= 0.25;
+            autoAimStatus_ = bspvision::uiText(
+                "AUTO AIM %1 · yaw error %2° · pitch error %3°",
+                "АВТОСУО %1 · ошибка yaw %2° · ошибка pitch %3°")
+                .arg(onTarget ? QStringLiteral("LOCK") : QStringLiteral("CORRECTING"))
+                .arg(yawError, 0, 'f', 2).arg(pitchError, 0, 'f', 2);
+        }
+#else
+        Q_UNUSED(sample);
+#endif
     }
 
     void startExternalOverlay() {
@@ -1291,7 +1497,9 @@ private:
     }
 
     void stopExternalOverlay() {
-        landmarkTrackingEnabled_ = false;
+        autoAimEnabled_ = false;
+        autoAimStage_ = AutoAimStage::Disabled;
+        autoAimStatus_ = bspvision::uiText("Auto aim stopped.", "Автодоводка остановлена.");
         if (overlay_) overlay_->hide();
         syncOverlay();
     }
@@ -1306,17 +1514,8 @@ private:
         const double range = originX_ && targetX_
             ? std::hypot(targetX_->value() - originX_->value(), targetY_->value() - originY_->value()) : 0.0;
         overlay_->setTargetDetails(range, flightTime_ ? flightTime_->value() : 0.0, loadedMapName_);
-        const bool enabled = targetDefined_ && trajectoryCalculated_;
+        const bool enabled = autoAimEnabled_ && targetDefined_ && trajectoryCalculated_;
         overlay_->setTargetEnabled(enabled);
-        bspvision::ClShowPosSample landmarkSample;
-        const bool haveLandmarkSample = screenReader_.isRunning() &&
-                                        screenReader_.latestSample(&landmarkSample);
-        overlay_->setLandmark(
-            landmarkPosition_,
-            haveLandmarkSample ? landmarkSample.position : QVector3D(),
-            haveLandmarkSample ? landmarkSample.angles.y() : cy,
-            haveLandmarkSample ? landmarkSample.angles.x() : cp,
-            landmarkTrackingEnabled_ && hasLandmark_ && haveLandmarkSample);
 
         QString state;
         if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked()) {
@@ -1327,6 +1526,7 @@ private:
         } else {
             state = QStringLiteral("cl_showpos reader stopped");
         }
+        if (autoAimEnabled_) state = autoAimStatus_;
         if (liveStatusLabel_) liveStatusLabel_->setText(state);
         overlay_->setTrackingStatus(state);
     }
@@ -1356,6 +1556,15 @@ private:
     }
 
     static constexpr int AutoAimHotkeyId = 0xB570;
+    AutoAimStage autoAimStage_ = AutoAimStage::Disabled;
+    bool autoAimEnabled_ = false;
+    int autoAimProbeAttempts_ = 0;
+    int autoAimProbeWaitTicks_ = 0;
+    double autoAimProbeYaw_ = 0.0;
+    double autoAimProbePitch_ = 0.0;
+    double mouseYawDegreesPerCount_ = 0.0;
+    double mousePitchDegreesPerCount_ = 0.0;
+    QString autoAimStatus_ = QStringLiteral("Auto aim OFF");
     QTabWidget *tabs_ = nullptr;
     QMenu *settingsMenu_ = nullptr;
     QMenu *languageMenu_ = nullptr;
@@ -1385,10 +1594,6 @@ private:
     QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
     QLabel *screenReaderStatusLabel_ = nullptr;
     QLabel *cropRegionLabel_ = nullptr;
-    QLabel *landmarkStatusLabel_ = nullptr;
-    QDoubleSpinBox *landmarkZ_ = nullptr;
-    QPushButton *pickLandmarkButton_ = nullptr;
-    QPushButton *clearLandmarkButton_ = nullptr;
     QCheckBox *screenReaderEnabledCheck_ = nullptr;
     QSpinBox *screenCaptureX_ = nullptr, *screenCaptureY_ = nullptr;
     QSpinBox *screenCaptureWidth_ = nullptr, *screenCaptureHeight_ = nullptr;
@@ -1406,13 +1611,8 @@ private:
     QString collisionBvhError_;
     bspvision::LiveOverlay *overlay_ = nullptr;
     QString loadedMapName_;
-    QString landmarkSettingsKey_;
-    QVector3D landmarkPosition_;
     int pickMode_ = 0;
     bool targetDefined_ = false;
-    bool hasLandmark_ = false;
-    bool landmarkTrackingEnabled_ = false;
-    bool landmarkPickMode_ = false;
 #if defined(Q_OS_WIN)
     bool hotkeyRegistered_ = false;
 #endif
