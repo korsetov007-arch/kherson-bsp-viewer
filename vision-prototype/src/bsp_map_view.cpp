@@ -57,6 +57,11 @@ void BspMapView::setHeightfield(const QImage &hillshade, const QRectF &worldBoun
     update();
 }
 
+void BspMapView::setHeightfieldContours(const QVector<QLineF> &contours) {
+    heightfieldContours_ = contours;
+    update();
+}
+
 void BspMapView::setHeightfieldVisible(bool visible) {
     heightfieldVisible_ = visible && !heightfieldImage_.isNull();
     update();
@@ -67,6 +72,7 @@ void BspMapView::clearMap() {
     polygons_.clear();
     heightfieldImage_ = {};
     heightfieldWorldBounds_ = {};
+    heightfieldContours_.clear();
     heightfieldVisible_ = false;
     hasSelection_ = false;
     minX_ = minY_ = minZ_ = 0.0;
@@ -157,6 +163,15 @@ void BspMapView::paintEvent(QPaintEvent *event) {
             painter.setBrush(QColor(52 + tint, 66 + tint, 81 + tint));
         }
         painter.drawPolygon(screenPolygon);
+    }
+
+    if (heightfieldVisible_ && !heightfieldContours_.isEmpty()) {
+        painter.setPen(QPen(QColor(245, 230, 160, 200), 1.0));
+        painter.setBrush(Qt::NoBrush);
+        for (const QLineF &contour : heightfieldContours_) {
+            painter.drawLine(worldToScreen(contour.x1(), contour.y1()),
+                             worldToScreen(contour.x2(), contour.y2()));
+        }
     }
 
     if (hasSelection_) {
