@@ -67,6 +67,8 @@ public:
 
     QVector<BspPolygon> facePolygons(bool includeSkySurfaces = false) const;
     int skyFaceCount() const;
+    int displacementCount() const { return displacementCount_; }
+    int displacementTriangleCount() const { return displacementTriangleCount_; }
     QString summary() const;
 
 private:
@@ -79,6 +81,10 @@ private:
     QVector<BspEdge> edges_;
     QVector<qint32> surfEdges_;
     QVector<BspFace> faces_;
+    QVector<QVector<BspPolygon>> displacementPolygonsByFace_;
+    QVector<quint8> displacementFacePresent_;
+    int displacementCount_ = 0;
+    int displacementTriangleCount_ = 0;
 };
 
 } // namespace bspvision
