@@ -324,7 +324,7 @@ private:
         };
         const double ox = value(originX_, 0.0), oy = value(originY_, 0.0), oz = value(originZ_, 32.0);
         const double tx = value(targetX_, 512.0), ty = value(targetY_, 0.0), tz = value(targetZ_, 32.0);
-        const double speed = value(speed_, 1000.0), gravity = value(gravity_, 800.0);
+        const double speed = value(speed_, 4000.0), gravity = value(gravity_, 600.0);
         const double yaw = value(yaw_, 0.0), pitch = value(pitch_, 25.0), flight = value(flightTime_, 2.0);
         const double initialYaw = value(currentYawInit_, 0.0), initialPitch = value(currentPitchInit_, 0.0);
         const double overlayFov = value(overlayFov_, 90.0);
@@ -957,10 +957,10 @@ private:
 
         auto *physicsGroup = new QGroupBox(bspvision::uiText("Projectile model", "Параметры снаряда"), tab);
         auto *physicsForm = new QFormLayout(physicsGroup);
-        speed_ = makeCoordinate(1000.0, physicsGroup);
+        speed_ = makeCoordinate(4000.0, physicsGroup);
         speed_->setRange(1.0, 100000.0);
         speed_->setSingleStep(50.0);
-        gravity_ = makeCoordinate(800.0, physicsGroup);
+        gravity_ = makeCoordinate(600.0, physicsGroup);
         gravity_->setRange(0.0, 100000.0);
         gravity_->setSingleStep(50.0);
         yaw_ = makeCoordinate(0.0, physicsGroup);
@@ -972,8 +972,20 @@ private:
         flightTime_ = makeCoordinate(2.0, physicsGroup);
         flightTime_->setRange(0.05, 300.0);
         flightTime_->setSingleStep(0.5);
-        physicsForm->addRow(bspvision::uiText("Game speed (units/s)", "Игровая скорость (ед./с)"), speed_);
-        physicsForm->addRow(bspvision::uiText("Game gravity (units/s²)", "Игровая гравитация (ед./с²)"), gravity_);
+        speed_->setToolTip(bspvision::uiText(
+            "4000 is the speed used by the BM-30 addon's HUD trajectory preview, not a verified sw_rocket_9m528_v3 launch speed.",
+            "4000 — скорость в HUD-предсказании аддона БМ-30, а не подтверждённая начальная скорость sw_rocket_9m528_v3."));
+        gravity_->setToolTip(bspvision::uiText(
+            "Use the magnitude of physenv.GetGravity() for this server. Stock Garry's Mod sv_gravity is 600; servers can change it.",
+            "Укажите модуль physenv.GetGravity() на сервере. Стандартное значение sv_gravity в Garry's Mod — 600, но сервер может его менять."));
+        physicsForm->addRow(bspvision::uiText("Reference speed (units/s)", "Опорная скорость (ед./с)"), speed_);
+        physicsForm->addRow(bspvision::uiText("Gravity (units/s²)", "Гравитация (ед./с²)"), gravity_);
+        auto *bm30Preset = new QPushButton(
+            bspvision::uiText("BM-30 · HUD estimate (4000 / 600)", "БМ-30 · оценка HUD (4000 / 600)"), physicsGroup);
+        bm30Preset->setToolTip(bspvision::uiText(
+            "Applies 4000 units/s from the addon's HUD predictor and stock GMod gravity 600. The rocket entity's real speed is still unknown.",
+            "Подставляет 4000 ед./с из HUD-предсказателя аддона и стандартную гравитацию GMod 600. Реальная скорость сущности ракеты пока неизвестна."));
+        physicsForm->addRow(bm30Preset);
         physicsForm->addRow(bspvision::uiText("Yaw / azimuth (°)", "Азимут (°)"), yaw_);
         physicsForm->addRow(bspvision::uiText("Pitch / elevation (°)", "Угол возвышения (°)"), pitch_);
         physicsForm->addRow(bspvision::uiText("Flight time (s)", "Время полёта (с)"), flightTime_);
@@ -982,8 +994,8 @@ private:
             physicsGroup);
         autoSolveTargetCheck_->setChecked(true);
         autoSolveTargetCheck_->setToolTip(bspvision::uiText(
-            "Uses only the in-game speed and gravity entered above. Chooses the lower-time ballistic solution.",
-            "Использует только введённые игровые скорость и гравитацию. Выбирает решение с меньшим временем полёта."));
+            "Uses a straight XY azimuth between the two points, solves the low-time ballistic arc, then tries the high arc if the low arc intersects BSP surfaces. This is an ideal HUD-style estimate; it does not simulate missile guidance.",
+            "Берёт прямой азимут между двумя точками, рассчитывает низкую баллистическую дугу, а при пересечении BSP пробует высокую. Это идеальная оценка для HUD, а не симуляция наведения управляемой ракеты."));
         physicsForm->addRow(autoSolveTargetCheck_);
 
         controls->addWidget(launchGroup, 1);
@@ -1006,8 +1018,8 @@ private:
         ballisticsView_ = new bspvision::BallisticsView(tab);
         layout->addWidget(ballisticsView_, 1);
         ballisticsSummary_ = new QLabel(bspvision::uiText(
-            "Ideal projectile model only: tune speed and gravity to the game. Obstacles, drag, splash radius and engine-specific projectile behavior are not simulated.",
-            "Используется идеальная модель снаряда. Подберите скорость и гравитацию под игру. Столкновения, препятствия, сопротивление воздуха и особенности конкретного оружия не моделируются."), tab);
+            "BM-30 reference: 4000 units/s is copied from the addon's HUD preview only; it is not the confirmed missile speed. Gravity defaults to stock GMod 600. Guided-rocket behaviour, drag and live engine physics are not simulated.",
+            "Ориентир для БМ-30: 4000 ед./с взято только из HUD-предсказания аддона — реальная скорость ракеты не подтверждена. Стандартная гравитация GMod — 600. Наведение ракеты, сопротивление и фактическая физика движка не моделируются."), tab);
         ballisticsSummary_->setWordWrap(true);
         layout->addWidget(ballisticsSummary_);
         tabs->addTab(tab, bspvision::uiText("Ballistic lab", "Баллистика"));
@@ -1066,6 +1078,12 @@ private:
         connect(autoSolveTargetCheck_, &QCheckBox::toggled, this, [this](bool enabled) {
             updateAutoSolveControls();
             if (enabled) calculateArcAutomatically();
+        });
+        connect(bm30Preset, &QPushButton::clicked, this, [this] {
+            speed_->setValue(4000.0);
+            gravity_->setValue(600.0);
+            if (autoSolveTargetCheck_ && autoSolveTargetCheck_->isChecked())
+                calculateArcAutomatically();
         });
         updateAutoSolveControls();
     }
