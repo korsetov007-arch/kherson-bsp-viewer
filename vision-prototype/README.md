@@ -4,13 +4,13 @@ A standalone Qt 6 / C++20 Windows application for offline BSP inspection and vis
 
 ## What is implemented
 
-- Qt desktop UI with **Visual matching** and **BSP geometry** tabs.
+- Qt desktop UI with **Visual matching**, **BSP geometry**, and **Ballistic lab** tabs.
 - Load two image files and compare local ORB visual features.
 - Capture the primary monitor after a two-second delay; the app hides temporarily so the user can switch back to the game, without reading game memory or automating controls.
 - Ratio-test descriptor filtering and RANSAC homography verification; the UI reports the inlier count separately from raw matches.
 - Load Source **BSP version 20** files with validation of the VBSP signature, 64 lump ranges, and core geometry record lengths.
 - Parse vertices, edges, surfedges, and faces; reconstruct valid face outlines.
-- Preview face outlines from above in XY, click to inspect XY coordinates, orbit a simple painter-based 3D view with drag-to-rotate and wheel-to-zoom, and inspect a table of lump sizes and record counts.
+- Preview face outlines from above in XY, click to inspect XY coordinates, orbit a simple painter-based 3D view with drag-to-rotate and wheel-to-zoom, and inspect a table of lump sizes and record counts.\n- Ballistic lab with launch and target XYZ entry, map-click XY picking, configurable initial speed/gravity/yaw/elevation/time, low-arc and high-arc target solvers, and a three-panel trajectory display (XY plan, XZ elevation, oblique 3D) with launch/target markers, grid lines and axis labels.
 - Synthetic BSP parser tests check header handling, geometry reconstruction, and rejection of invalid signature/lump ranges.
 - Local-only processing; no neural-model files are downloaded or required.
 
@@ -20,7 +20,7 @@ The current feature matcher is ORB, a classical computer-vision baseline rather 
 
 The BSP preview has a top-down XY outline mode and a lightweight painter-based 3D orbit mode. A click reports X/Y only: Z is intentionally not guessed because several floors or ceilings can share the same XY position. BSP v20 is the only supported version in this prototype. Materials and textures are not rendered.
 
-The next planned increments are user-selected screen capture, optional learned matching via ONNX Runtime, 2D-to-3D landmark association, camera-intrinsic calibration, and confidence-checked pose estimation.
+The ballistic lab uses ideal constant-gravity projectile equations. It does not model collisions, map occlusion, air drag, splash radius, weapon-specific behavior or server-side physics. Tune speed and gravity against the intended offline test environment; calculated angles are a visual reference and are not automatically sent to a game. The lightweight 3D view is a projection for inspection, not a full z-buffer renderer.\n\nThe next planned increments are optional learned matching via ONNX Runtime, 2D-to-3D landmark association, camera-intrinsic calibration, and confidence-checked pose estimation.
 
 ## Build on Windows
 
@@ -70,7 +70,7 @@ If you already opened the repository root in Visual Studio, use **File → Open 
 
 1. In **BSP geometry**, choose a Source BSP v20 file. Check the summary and lump table. Use **Top-down XY** for coordinate inspection or **Orbit 3D** to rotate the geometry (drag) and zoom (wheel).
 2. In **Visual matching**, load a reference image. To grab the game display, choose **Capture primary screen (2 s)** and switch to the game after the app hides; otherwise load a screenshot file.
-3. Choose **Find visual matches**. Inspect the drawn match lines and RANSAC inlier count. Treat this as a diagnostic, not a reliable camera pose.
+3. Choose **Find visual matches**. Inspect the drawn match lines and RANSAC inlier count. Treat this as a diagnostic, not a reliable camera pose.\n4. In **Ballistic lab**, enter launch XYZ and projectile parameters. Use **Pick XY on map…** to choose launch or target XY from the BSP preview; enter Z manually because the top-down view cannot identify the floor. Choose **Calculate current arc** to preview the entered angles or **Solve target · low arc/high arc** to estimate an ideal elevation angle. The amber path is shown in XY, XZ and oblique 3D views.
 
 Capture currently targets the primary monitor. Some exclusive-fullscreen games may not be capturable; try borderless/windowed mode in that case.
 
