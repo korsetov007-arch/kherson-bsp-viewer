@@ -3,6 +3,7 @@
 #include "bsp_file.hpp"
 
 #include <QImage>
+#include <QLineF>
 #include <QRectF>
 #include <QString>
 #include <QVector>
@@ -33,11 +34,14 @@ public:
     const QVector<float> &groundLayer() const { return ground_; }
     const QVector<float> &canopyLayer() const { return canopy_; }
     const QImage &hillshadeImage() const { return hillshade_; }
+    const QVector<QLineF> &contours128() const { return contours128_; }
+    const QVector<QLineF> &contours256() const { return contours256_; }
 
     float groundAt(double x, double y) const;
     float canopyAt(double x, double y) const;
 
 private:
+    void buildContours(double interval, QVector<QLineF> *output) const;
     qsizetype cellIndexAt(double x, double y) const;
 
     int width_ = 0;
@@ -50,6 +54,8 @@ private:
     double maxY_ = 0.0;
     QVector<float> ground_;
     QVector<float> canopy_;
+    QVector<QLineF> contours128_;
+    QVector<QLineF> contours256_;
     QImage hillshade_;
 };
 
