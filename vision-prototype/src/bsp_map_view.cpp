@@ -65,6 +65,9 @@ void BspMapView::setHeightfieldVisible(bool visible) {
 void BspMapView::clearMap() {
     vertices_.clear();
     polygons_.clear();
+    heightfieldImage_ = {};
+    heightfieldWorldBounds_ = {};
+    heightfieldVisible_ = false;
     hasSelection_ = false;
     minX_ = minY_ = minZ_ = 0.0;
     maxX_ = maxY_ = maxZ_ = 1.0;
