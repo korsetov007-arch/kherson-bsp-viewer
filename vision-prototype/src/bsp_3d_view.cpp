@@ -1,4 +1,5 @@
 #include "bsp_3d_view.hpp"
+#include "app_language.hpp"
 
 #include <QMouseEvent>
 #include <QPainter>
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -56,27 +58,34 @@ void Bsp3DView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPoly
     zoom_ = 1.0;
     dragging_ = false;
 
-    if (vertices_.isEmpty()) {
+    bool haveBounds = false;
+    double minX = 0.0, maxX = 0.0, minY = 0.0, maxY = 0.0;
+    minZ_ = std::numeric_limits<double>::max();
+    maxZ_ = std::numeric_limits<double>::lowest();
+    for (const BspPolygon &polygon : polygons_) {
+        for (const BspVertex &vertex : polygon.vertices) {
+            if (!haveBounds) {
+                minX = maxX = vertex.x;
+                minY = maxY = vertex.y;
+                minZ_ = maxZ_ = vertex.z;
+                haveBounds = true;
+            } else {
+                minX = std::min(minX, static_cast<double>(vertex.x));
+                maxX = std::max(maxX, static_cast<double>(vertex.x));
+                minY = std::min(minY, static_cast<double>(vertex.y));
+                maxY = std::max(maxY, static_cast<double>(vertex.y));
+                minZ_ = std::min(minZ_, static_cast<double>(vertex.z));
+                maxZ_ = std::max(maxZ_, static_cast<double>(vertex.z));
+            }
+        }
+    }
+    if (!haveBounds) {
         centerX_ = centerY_ = centerZ_ = 0.0;
         minZ_ = 0.0;
         maxZ_ = 1.0;
         mapDiameter_ = 1.0;
         update();
         return;
-    }
-
-    double minX = vertices_.first().x;
-    double maxX = minX;
-    double minY = vertices_.first().y;
-    double maxY = minY;
-    minZ_ = maxZ_ = vertices_.first().z;
-    for (const BspVertex &vertex : vertices_) {
-        minX = std::min(minX, static_cast<double>(vertex.x));
-        maxX = std::max(maxX, static_cast<double>(vertex.x));
-        minY = std::min(minY, static_cast<double>(vertex.y));
-        maxY = std::max(maxY, static_cast<double>(vertex.y));
-        minZ_ = std::min(minZ_, static_cast<double>(vertex.z));
-        maxZ_ = std::max(maxZ_, static_cast<double>(vertex.z));
     }
     centerX_ = (minX + maxX) * 0.5;
     centerY_ = (minY + maxY) * 0.5;
@@ -120,10 +129,10 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
     painter.setPen(QPen(QColor(72, 82, 96), 1.0));
     painter.drawRect(viewport);
 
-    if (vertices_.isEmpty() || polygons_.isEmpty()) {
+    if (polygons_.isEmpty()) {
         painter.setPen(QColor(205, 211, 220));
         painter.drawText(viewport, Qt::AlignCenter | Qt::TextWordWrap,
-            QStringLiteral("Load a Source BSP v20 file to inspect its 3D face geometry."));
+            uiText("Load a Source BSP v20 file to inspect its 3D face geometry.", "Загрузите Source BSP v20, чтобы посмотреть геометрию в 3D."));
         return;
     }
 
@@ -191,7 +200,7 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
 
     painter.setPen(QColor(211, 216, 224));
     painter.drawText(QRectF(10, 3, width() - 20, 18), Qt::AlignLeft | Qt::AlignVCenter,
-        QStringLiteral("Orbit 3D • drag to rotate • mouse wheel to zoom • %1 faces")
+        uiText("Orbit 3D • drag to rotate • mouse wheel to zoom • %1 faces", "3D-орбита • тяните мышью для поворота • колесо для масштаба • граней: %1")
             .arg(static_cast<int>(renderFaces.size())));
 }
 
