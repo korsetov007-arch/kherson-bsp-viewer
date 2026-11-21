@@ -15,8 +15,10 @@ qt_add_executable(bsp-vision
     src/main.cpp
     src/bsp_file.cpp
     src/bsp_map_view.cpp
+    src/bsp_3d_view.cpp
     include/bsp_file.hpp
     include/bsp_map_view.hpp
+    include/bsp_3d_view.hpp
 )
 
 target_include_directories(bsp-vision PRIVATE include ${OpenCV_INCLUDE_DIRS})
