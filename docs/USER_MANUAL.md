@@ -26,7 +26,7 @@
 ## 4. Навигация по геометрии
 
 - **Сверху XY**: показ полигонов на плоскости X/Y. Щёлкните по карте, чтобы вывести координаты.
-- **3D-орбита**: удерживайте левую кнопку мыши и перемещайте мышь для вращения; колесо масштабирует изображение до 24×; двойной щелчок сбрасывает камеру. В верхней строке отдельно показано число обычных BSP faces и displacement-треугольников, число реально отрисованных треугольников, записанных пикселей и фрагментов, отклонённых depth buffer. Наведите курсор на окно 3D, чтобы увидеть мировые границы faces и displacement отдельно.
+- **3D-орбита**: удерживайте левую кнопку мыши и перемещайте мышь для вращения; колесо масштабирует изображение до 24×; двойной щелчок сбрасывает камеру. В верхней строке отдельно показано число обычных BSP faces и displacement-треугольников, число реально отрисованных треугольников, записанных фрагментов и фрагментов, отклонённых depth buffer. Наведите курсор на окно 3D, чтобы увидеть мировые границы faces и displacement отдельно.
 - Координата **Z** не определяется однозначно по виду сверху: одной точке X/Y могут соответствовать разные этажи. Введите нужную высоту вручную.
 - Флажок sky-поверхностей меняет геометрию во всех связанных видах.
 
@@ -73,7 +73,7 @@ Enable the checkbox when you want to inspect those surfaces. If a huge plane rem
 ## 4. Geometry navigation
 
 - **Top-down XY** shows polygons on the horizontal X/Y plane. Click the view to read coordinates.
-- **Orbit 3D**: hold the left mouse button and drag to rotate; use the mouse wheel to zoom up to 24×; double-click to reset the camera. The header separately reports ordinary BSP faces and displacement triangles, triangles actually rasterized, written pixels and fragments rejected by the depth buffer. Hover over the 3D view to inspect face and displacement world bounds separately.
+- **Orbit 3D**: hold the left mouse button and drag to rotate; use the mouse wheel to zoom up to 24×; double-click to reset the camera. The header separately reports ordinary BSP faces and displacement triangles, triangles actually rasterized, written fragments and fragments rejected by the depth buffer. Hover over the 3D view to inspect face and displacement world bounds separately.
 - **Z** cannot be inferred uniquely from a top-down view: the same X/Y may belong to different floors. Enter the desired height manually.
 - The sky-surface checkbox affects the geometry shown in all linked views.
 
