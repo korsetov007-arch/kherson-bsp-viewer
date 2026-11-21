@@ -456,6 +456,7 @@ bool BspFile::load(const QString &path, QString *error) {
                     BspPolygon triangle;
                     triangle.materialName = baseFace.materialName;
                     triangle.skySurface = baseFace.skySurface;
+                    triangle.displacementSurface = true;
                     triangle.vertices.reserve(3);
                     triangle.vertices.push_back(grid[triIndices[half][0]]);
                     triangle.vertices.push_back(grid[triIndices[half][1]]);
