@@ -1343,7 +1343,8 @@ private:
         const bool enabled = targetDefined_ && trajectoryCalculated_;
         overlay_->setTargetEnabled(enabled);
         bspvision::ClShowPosSample landmarkSample;
-        const bool haveLandmarkSample = screenReader_.latestSample(&landmarkSample);
+        const bool haveLandmarkSample = screenReader_.isRunning() &&
+                                        screenReader_.latestSample(&landmarkSample);
         overlay_->setLandmark(
             landmarkPosition_,
             haveLandmarkSample ? landmarkSample.position : QVector3D(),
