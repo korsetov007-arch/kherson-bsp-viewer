@@ -64,7 +64,9 @@ float readF32(const uchar *data) {
 bool isSkyTexture(const QString &materialName) {
     const QString name = materialName.trimmed().toLower().replace(QLatin1Char('\\'), QLatin1Char('/'));
     return name.startsWith(QStringLiteral("tools/toolsskybox")) ||
+           name.startsWith(QStringLiteral("tools/tool_skybox")) ||
            name.contains(QStringLiteral("/toolsskybox")) ||
+           name.contains(QStringLiteral("/tool_skybox")) ||
            name.startsWith(QStringLiteral("skybox/")) ||
            name.startsWith(QStringLiteral("sky/")) ||
            name.startsWith(QStringLiteral("sky_"));
