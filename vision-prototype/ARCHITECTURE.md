@@ -5,7 +5,7 @@
 - A C++20 / Qt 6 desktop shell with two tabs.
 - ORB image features, descriptor ratio filtering, and RANSAC homography inlier visualization.
 - Source BSP v20 header/lump validation plus extraction of vertices, edges, surfedges, and face outlines.
-- Top-down XY geometry preview and a full lump summary table.
+- Top-down XY geometry preview, orbitable 3D face preview, and a full lump summary table.
 - Delayed primary-monitor screenshot capture using Qt screen APIs.
 
 ## Intended localization pipeline
@@ -18,6 +18,8 @@
 6. Show pose, residuals, inlier count, and explicit failure/uncertainty states in the UI.
 
 ## Important constraints
+
+- The 3D painter preview is not a z-buffer renderer; intersecting or back-facing surfaces may overlap imperfectly.
 
 - The current ORB baseline is not a neural model and does not estimate camera pose.
 - Image-to-image homography is appropriate mainly for planar or approximately planar regions; it must not be presented as a 3D pose.
