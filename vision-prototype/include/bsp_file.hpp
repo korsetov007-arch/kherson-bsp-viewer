@@ -33,6 +33,7 @@ struct BspPolygon {
     QVector<BspVertex> vertices;
     QString materialName;
     bool skySurface = false;
+    bool displacementSurface = false;
 };
 
 struct BspLumpInfo {
