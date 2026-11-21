@@ -63,3 +63,23 @@ jobs:
         run: |
           ctest --test-dir build -C Release --output-on-failure
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package Windows app
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "build/Release"
+          $exePath = Join-Path $releaseDir "bsp-vision.exe"
+          $windeployqt = Join-Path $env:QT_ROOT_DIR "bin/windeployqt.exe"
+          & $windeployqt --release --no-translations $exePath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $opencvBin = Join-Path $env:GITHUB_WORKSPACE "build/vcpkg_installed/x64-windows/bin"
+          if (Test-Path $opencvBin) {
+            Get-ChildItem $opencvBin -Filter "*.dll" | Copy-Item -Destination $releaseDir -Force
+          }
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: bsp-vision-windows-x64
+          path: build/Release/
+          if-no-files-found: error
