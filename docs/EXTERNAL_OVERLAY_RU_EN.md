@@ -2,7 +2,7 @@
 
 ## Русский
 
-Приложение использует только текст, который видно на экране. В нём больше нет SBGL Bridge, Lua-адаптера, нативного GMod-модуля или named pipe.
+Приложение использует только текст, который видно на экране; код внутриигрового модуля не требуется.
 
 1. В Garry's Mod выполните \`cl_showpos 1\`, если команда доступна.
 2. По возможности используйте оконный или borderless-режим. Запустите \`bsp-geometry.exe\`.
@@ -15,7 +15,7 @@
 
 ## English
 
-The app uses only text that is visibly rendered on screen. SBGL Bridge, the Lua adapter, native GMod module, and named pipe have been removed.
+The app uses only text that is visibly rendered on screen; no in-game module is required.
 
 1. In Garry's Mod, run \`cl_showpos 1\` if the command is available.
 2. Prefer windowed or borderless mode. Launch \`bsp-geometry.exe\`.
