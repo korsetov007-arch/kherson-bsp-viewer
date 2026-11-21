@@ -404,6 +404,16 @@ private:
         coordinateLabel_->setText(bspvision::uiText(
             "Click the map preview to inspect XY coordinates. Z is ambiguous because maps can contain multiple floors. Sky-textured faces are hidden by default.",
             "Нажмите на карту, чтобы выбрать X/Y. Координата Z неоднозначна из-за нескольких этажей. Поверхности с sky-материалами скрыты по умолчанию."));
+        if (landmarkStatusLabel_) {
+            landmarkStatusLabel_->setText(hasLandmark_
+                ? bspvision::uiText("Aiming landmark: X=%1, Y=%2, Z=%3. Press F7 to show/hide it.",
+                                    "Круг-ориентир: X=%1, Y=%2, Z=%3. F7 — показать/скрыть.")
+                      .arg(landmarkPosition_.x(), 0, 'f', 1)
+                      .arg(landmarkPosition_.y(), 0, 'f', 1)
+                      .arg(landmarkPosition_.z(), 0, 'f', 1)
+                : bspvision::uiText("No aiming landmark set. Pick one point on the BSP map, then press F7.",
+                                    "Круг-ориентир не задан. Выберите точку на карте BSP, затем нажмите F7."));
+        }
     }
 
     QString localizeLumpName(const QString &name) const {
