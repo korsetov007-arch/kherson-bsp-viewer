@@ -6,7 +6,7 @@
 - ORB image features, descriptor ratio filtering, and RANSAC homography inlier visualization.
 - Source BSP v20 header/lump validation plus extraction of vertices, edges, surfedges, and face outlines.
 - Top-down XY geometry preview, orbitable 3D face preview, and a full lump summary table.
-- Delayed primary-monitor screenshot capture using Qt screen APIs.
+- Delayed primary-monitor screenshot capture using Qt screen APIs.\n- Ballistic trajectory preview with configurable projectile parameters, map-picked/manual launch and target coordinates, low/high arc solving, and XY/XZ/oblique 3D displays with axis guides.
 
 ## Intended localization pipeline
 
@@ -17,7 +17,7 @@
 5. Estimate camera pose only when camera intrinsics and enough well-distributed 2D-to-3D correspondences are available.
 6. Show pose, residuals, inlier count, and explicit failure/uncertainty states in the UI.
 
-## Important constraints
+## Important constraints\n\n- Ballistic calculation currently uses ideal constant-gravity equations; collisions, map occlusion, drag and game-specific projectile physics are not simulated. It is a visual planning aid and does not automate game input.
 
 - The 3D painter preview is not a z-buffer renderer; intersecting or back-facing surfaces may overlap imperfectly.
 
