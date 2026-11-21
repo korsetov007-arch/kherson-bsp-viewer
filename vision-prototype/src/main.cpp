@@ -1427,8 +1427,8 @@ private:
                     autoAimProbeWaitTicks_ = 0;
                 } else {
                     stopAutoAim(bspvision::uiText(
-                        "AUTO AIM FAILED · yaw did not respond to mouse input.",
-                        "АВТОСУО НЕ ЗАПУЩЕНА · угол yaw не реагирует на мышь."));
+                        "AUTO AIM FAILED · yaw did not respond. If GMod uses raw input, try console command m_rawinput 0 and press F7 again.",
+                        "АВТОСУО НЕ ЗАПУЩЕНА · yaw не реагирует. Если включён raw input, попробуйте в консоли m_rawinput 0 и снова нажмите F7."));
                     return;
                 }
             }
@@ -1465,8 +1465,8 @@ private:
                     autoAimProbeWaitTicks_ = 0;
                 } else {
                     stopAutoAim(bspvision::uiText(
-                        "AUTO AIM FAILED · pitch did not respond to mouse input.",
-                        "АВТОСУО НЕ ЗАПУЩЕНА · угол pitch не реагирует на мышь."));
+                        "AUTO AIM FAILED · pitch did not respond. If GMod uses raw input, try console command m_rawinput 0 and press F7 again.",
+                        "АВТОСУО НЕ ЗАПУЩЕНА · pitch не реагирует. Если включён raw input, попробуйте в консоли m_rawinput 0 и снова нажмите F7."));
                     return;
                 }
             }
