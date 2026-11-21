@@ -1,10 +1,12 @@
 #include "bsp_file.hpp"
+#include "app_language.hpp"
 
 #include <QFile>
 #include <QtEndian>
 
 #include <bit>
 #include <cmath>
+#include <cstring>
 #include <utility>
 
 namespace bspvision {
@@ -59,6 +61,15 @@ float readF32(const uchar *data) {
     return std::bit_cast<float>(readU32(data));
 }
 
+bool isSkyTexture(const QString &materialName) {
+    const QString name = materialName.trimmed().toLower().replace(QLatin1Char('\\'), QLatin1Char('/'));
+    return name.startsWith(QStringLiteral("tools/toolsskybox")) ||
+           name.contains(QStringLiteral("/toolsskybox")) ||
+           name.startsWith(QStringLiteral("skybox/")) ||
+           name.startsWith(QStringLiteral("sky/")) ||
+           name.startsWith(QStringLiteral("sky_"));
+}
+
 } // namespace
 
 void BspFile::clear() {
@@ -79,17 +90,17 @@ bool BspFile::load(const QString &path, QString *error) {
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        if (error) *error = QStringLiteral("Cannot open file: ") + file.errorString();
+        if (error) *error = uiText("Cannot open file: ", "Не удалось открыть файл: ") + file.errorString();
         return false;
     }
     bytes_ = file.readAll();
     if (file.error() != QFileDevice::NoError) {
-        if (error) *error = QStringLiteral("Failed while reading BSP: ") + file.errorString();
+        if (error) *error = uiText("Failed while reading BSP: ", "Ошибка при чтении BSP: ") + file.errorString();
         clear();
         return false;
     }
     if (bytes_.size() < HeaderSize) {
-        if (error) *error = QStringLiteral("File is smaller than the Source BSP header.");
+        if (error) *error = uiText("File is smaller than the Source BSP header.", "Файл меньше заголовка Source BSP.");
         clear();
         return false;
     }
@@ -97,7 +108,7 @@ bool BspFile::load(const QString &path, QString *error) {
     const auto *data = reinterpret_cast<const uchar *>(bytes_.constData());
     // Bytes "VBSP" have this value when interpreted as a little-endian uint32.
     if (readU32(data) != 0x50534256U) {
-        if (error) *error = QStringLiteral("Invalid BSP signature. Expected VBSP.");
+        if (error) *error = uiText("Invalid BSP signature. Expected VBSP.", "Неверная сигнатура BSP. Ожидалась VBSP.");
         clear();
         return false;
     }
@@ -105,7 +116,7 @@ bool BspFile::load(const QString &path, QString *error) {
     version_ = readI32(data + 4);
     if (version_ != SupportedVersion) {
         if (error) {
-            *error = QStringLiteral("Unsupported BSP version %1; this prototype currently supports version %2.")
+            *error = uiText("Unsupported BSP version %1; this build supports version %2.", "Версия BSP %1 не поддерживается; эта сборка поддерживает версию %2.")
                          .arg(version_).arg(SupportedVersion);
         }
         clear();
@@ -124,7 +135,7 @@ bool BspFile::load(const QString &path, QString *error) {
         lump.fourCC = readU32(data + headerOffset + 12);
 
         if (lump.length < 0 || lump.offset < 0) {
-            if (error) *error = QStringLiteral("Lump %1 has a negative offset or length.").arg(lump.name);
+            if (error) *error = uiText("Lump %1 has a negative offset or length.", "Lump %1 имеет отрицательное смещение или длину.").arg(lump.name);
             clear();
             return false;
         }
@@ -135,7 +146,7 @@ bool BspFile::load(const QString &path, QString *error) {
         const qint64 start = lump.offset;
         const qint64 end = start + static_cast<qint64>(lump.length);
         if (start < HeaderSize || end < start || end > fileLength) {
-            if (error) *error = QStringLiteral("Lump %1 points outside the file.").arg(lump.name);
+            if (error) *error = uiText("Lump %1 points outside the file.", "Lump %1 выходит за пределы файла.").arg(lump.name);
             clear();
             return false;
         }
@@ -149,7 +160,7 @@ bool BspFile::load(const QString &path, QString *error) {
     const auto &faceLump = lumps_[7];
     if ((vertexLump.length % 12) != 0 || (edgeLump.length % 4) != 0 ||
         (surfEdgeLump.length % 4) != 0 || (faceLump.length % 56) != 0) {
-        if (error) *error = QStringLiteral("Core geometry lumps have unexpected record sizes.");
+        if (error) *error = uiText("Core geometry lumps have unexpected record sizes.", "Неверный размер записей в основных геометрических lump.");
         clear();
         return false;
     }
@@ -160,7 +171,7 @@ bool BspFile::load(const QString &path, QString *error) {
         const float y = readF32(data + offset + 4);
         const float z = readF32(data + offset + 8);
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
-            if (error) *error = QStringLiteral("Vertex lump contains a non-finite coordinate.");
+            if (error) *error = uiText("Vertex lump contains a non-finite coordinate.", "Lump вершин содержит некорректные координаты.");
             clear();
             return false;
         }
@@ -175,6 +186,51 @@ bool BspFile::load(const QString &path, QString *error) {
     for (qint32 offset = surfEdgeLump.offset; offset < surfEdgeLump.offset + surfEdgeLump.length; offset += 4)
         surfEdges_.push_back(readI32(data + offset));
 
+    // Resolve each texture-info record to a material name. Source BSP faces reference
+    // texinfo -> texdata -> string-table ID -> NUL-terminated texture name.
+    const auto &texDataLump = lumps_[2];
+    const auto &texInfoLump = lumps_[6];
+    const auto &textureStringDataLump = lumps_[43];
+    const auto &textureStringTableLump = lumps_[44];
+
+    QVector<qint32> texDataForInfo;
+    if ((texInfoLump.length % 72) == 0) {
+        texDataForInfo.reserve(texInfoLump.length / 72);
+        for (qint32 offset = texInfoLump.offset; offset < texInfoLump.offset + texInfoLump.length; offset += 72)
+            texDataForInfo.push_back(readI32(data + offset + 68));
+    }
+
+    QVector<qint32> stringOffsets;
+    if ((textureStringTableLump.length % 4) == 0) {
+        stringOffsets.reserve(textureStringTableLump.length / 4);
+        for (qint32 offset = textureStringTableLump.offset;
+             offset < textureStringTableLump.offset + textureStringTableLump.length; offset += 4)
+            stringOffsets.push_back(readI32(data + offset));
+    }
+
+    QVector<QString> texDataNames;
+    if ((texDataLump.length % 32) == 0) {
+        texDataNames.reserve(texDataLump.length / 32);
+        for (qint32 offset = texDataLump.offset; offset < texDataLump.offset + texDataLump.length; offset += 32) {
+            const qint32 stringTableId = readI32(data + offset + 12);
+            QString materialName;
+            if (stringTableId >= 0 && stringTableId < stringOffsets.size()) {
+                const qint32 nameOffset = stringOffsets[stringTableId];
+                if (nameOffset >= 0 && nameOffset < textureStringDataLump.length) {
+                    const char *nameStart = reinterpret_cast<const char *>(
+                        data + textureStringDataLump.offset + nameOffset);
+                    const qint64 remaining = textureStringDataLump.length - nameOffset;
+                    const void *terminator = std::memchr(nameStart, '\\0', static_cast<size_t>(remaining));
+                    const qsizetype nameLength = terminator
+                        ? static_cast<qsizetype>(static_cast<const char *>(terminator) - nameStart)
+                        : static_cast<qsizetype>(remaining);
+                    materialName = QString::fromLatin1(nameStart, nameLength);
+                }
+            }
+            texDataNames.push_back(materialName);
+        }
+    }
+
     faces_.reserve(faceLump.length / 56);
     for (qint32 offset = faceLump.offset; offset < faceLump.offset + faceLump.length; offset += 56) {
         BspFace face;
@@ -182,6 +238,14 @@ bool BspFile::load(const QString &path, QString *error) {
         face.edgeCount = readI16(data + offset + 8);
         face.textureInfo = readI16(data + offset + 10);
         face.displacementInfo = readI16(data + offset + 12);
+        const qint16 texInfoIndex = face.textureInfo;
+        if (texInfoIndex >= 0 && texInfoIndex < texDataForInfo.size()) {
+            const qint32 texDataIndex = texDataForInfo[texInfoIndex];
+            if (texDataIndex >= 0 && texDataIndex < texDataNames.size()) {
+                face.materialName = texDataNames[texDataIndex];
+                face.skySurface = isSkyTexture(face.materialName);
+            }
+        }
         faces_.push_back(face);
     }
 
@@ -190,18 +254,21 @@ bool BspFile::load(const QString &path, QString *error) {
     return true;
 }
 
-QVector<BspPolygon> BspFile::facePolygons() const {
+QVector<BspPolygon> BspFile::facePolygons(bool includeSkySurfaces) const {
     QVector<BspPolygon> result;
     if (!loaded_) return result;
     result.reserve(faces_.size());
 
     for (const BspFace &face : faces_) {
+        if (face.skySurface && !includeSkySurfaces) continue;
         if (face.edgeCount < 3 || face.edgeCount > 4096 || face.firstEdge < 0)
             continue;
         const qint64 edgeEnd = static_cast<qint64>(face.firstEdge) + face.edgeCount;
         if (edgeEnd > surfEdges_.size()) continue;
 
         BspPolygon polygon;
+        polygon.materialName = face.materialName;
+        polygon.skySurface = face.skySurface;
         polygon.vertices.reserve(face.edgeCount);
         bool valid = true;
         for (qint32 i = 0; i < face.edgeCount; ++i) {
@@ -224,8 +291,14 @@ QVector<BspPolygon> BspFile::facePolygons() const {
     return result;
 }
 
+int BspFile::skyFaceCount() const {
+    int count = 0;
+    for (const BspFace &face : faces_) if (face.skySurface) ++count;
+    return count;
+}
+
 QString BspFile::summary() const {
-    if (!loaded_) return QStringLiteral("No BSP loaded.");
+    if (!loaded_) return uiText("No BSP loaded.", "BSP-карта не загружена.");
     const int validPolygons = facePolygons().size();
     return QStringLiteral(
         "File: %1\n"
@@ -239,7 +312,8 @@ QString BspFile::summary() const {
         .arg(edges_.size())
         .arg(surfEdges_.size())
         .arg(faces_.size())
-        .arg(validPolygons);
+        .arg(validPolygons)
+        .arg(skyFaceCount());
 }
 
 } // namespace bspvision
