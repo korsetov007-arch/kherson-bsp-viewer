@@ -97,8 +97,11 @@ QImage renderGlyph(const QFont &font, QChar character, int cellWidth, int cellHe
     QImage rendered(cellWidth, cellHeight, QImage::Format_ARGB32);
     rendered.fill(qRgb(0, 0, 0));
     QPainter painter(&rendered);
-    painter.setRenderHint(QPainter::TextAntialiasing, false);
-    painter.setRenderHint(QPainter::Antialiasing, false);
+    // Source's DebugFixed scheme uses Courier New with antialiasing on.
+    // Keep this aligned with VGUI's shipped font definition rather than a
+    // hard pixel font; the captured glyphs are thresholded identically below.
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::white);
     painter.setFont(font);
     painter.drawText(0, ascent, QString(character));
@@ -109,7 +112,7 @@ QImage renderGlyph(const QFont &font, QChar character, int cellWidth, int cellHe
         const QRgb *src = reinterpret_cast<const QRgb *>(rendered.constScanLine(y));
         uchar *dst = mask.scanLine(y);
         for (int x = 0; x < cellWidth; ++x)
-            dst[x] = qGray(src[x]) >= 128 ? 255 : 0;
+            dst[x] = qGray(src[x]) >= 168 ? 255 : 0;
     }
     return mask;
 }
@@ -362,11 +365,11 @@ public:
 private:
     bool calibrate(const QImage &mask) {
         QStringList families = {
-            QStringLiteral("DebugFixed"),
-            QStringLiteral("Fixedsys"),
+            QStringLiteral("Courier New"), // GMod DebugFixed scheme default
+            QStringLiteral("DebugFixed"),  // Some Windows/VGUI environments expose this alias
             QStringLiteral("Lucida Console"),
             QStringLiteral("Consolas"),
-            QStringLiteral("Courier New")
+            QStringLiteral("Fixedsys")
         };
         const QString systemFixed = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
         if (!systemFixed.isEmpty() && !families.contains(systemFixed)) families.append(systemFixed);
