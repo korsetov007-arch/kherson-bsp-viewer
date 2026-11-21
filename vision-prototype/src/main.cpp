@@ -27,6 +27,7 @@
 #include <QTimer>
 #include <QFileInfo>
 #include <QDoubleSpinBox>
+#include <QDateTime>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -226,6 +227,7 @@ public:
         overlayTimer_ = new QTimer(this);
         connect(overlayTimer_, &QTimer::timeout, this, [this] {
             pollF7Fallback();
+            updateOverlayGeometry();
             syncOverlay();
         });
         overlayTimer_->start(16);
@@ -245,7 +247,7 @@ public:
         MSG *msg = static_cast<MSG *>(message);
         if (msg && msg->message == WM_HOTKEY &&
             msg->wParam == static_cast<WPARAM>(AutoAimHotkeyId)) {
-            toggleAutoAim();
+            handleF7HotkeyPress();
             if (result) *result = 0;
             return true;
         }
@@ -256,14 +258,7 @@ public:
 protected:
     void keyPressEvent(QKeyEvent *event) override {
         if (event->key() == Qt::Key_F7 && !event->isAutoRepeat()) {
-#if defined(Q_OS_WIN)
-            if (!hotkeyRegistered_) {
-                f7WasDown_ = true;
-                toggleAutoAim();
-            }
-#else
-            toggleAutoAim();
-#endif
+            handleF7HotkeyPress();
             event->accept();
             return;
         }
@@ -1299,12 +1294,29 @@ private:
         return delta - 180.0;
     }
 
+    void handleF7HotkeyPress() {
+#if defined(Q_OS_WIN)
+        const ULONGLONG now = GetTickCount64();
+        // RegisterHotKey, the low-level polling fallback and Qt key events may
+        // observe the same physical press. Debounce all three through one path.
+        if (lastF7ToggleTimeMs_ != 0 && now - lastF7ToggleTimeMs_ < 250) {
+            f7WasDown_ = true;
+            return;
+        }
+        lastF7ToggleTimeMs_ = now;
+#endif
+        f7WasDown_ = true;
+        toggleAutoAim();
+    }
+
     void pollF7Fallback() {
 #if defined(Q_OS_WIN)
-        if (hotkeyRegistered_) return;
+        // Keep polling even when RegisterHotKey succeeded: some fullscreen or
+        // elevated-window combinations do not deliver WM_HOTKEY to the Qt HWND.
         const bool down = (GetAsyncKeyState(VK_F7) & 0x8000) != 0;
-        if (down && !f7WasDown_ && (autoAimEnabled_ || isSelectedTargetForeground()))
-            toggleAutoAim();
+        if (down && !f7WasDown_ &&
+            (autoAimEnabled_ || isSelectedTargetForeground() || isActiveWindow()))
+            handleF7HotkeyPress();
         f7WasDown_ = down;
 #endif
     }
@@ -1427,32 +1439,41 @@ private:
             return;
         }
         if (!targetDefined_ || !trajectoryCalculated_) {
-            statusBar()->showMessage(bspvision::uiText(
-                "Calculate a ballistic solution first, select the target window, then press F7 while it is focused.",
-                "Сначала рассчитайте траекторию, выберите целевое окно и нажмите F7, когда оно активно."));
+            const QString message = bspvision::uiText(
+                "F7 not started: calculate a ballistic solution first.",
+                "F7 не запустила автодоводку: сначала рассчитайте траекторию.");
+            statusBar()->showMessage(message);
+            showTransientAutoAimStatus(message);
             return;
         }
         if (lastTrajectoryBlocked_) {
-            statusBar()->showMessage(bspvision::uiText(
-                "Auto aim blocked: the selected ballistic path intersects BSP geometry. Choose a clear arc first.",
-                "Автодоводка недоступна: рассчитанная траектория пересекает геометрию BSP. Сначала выберите свободную дугу."));
+            const QString message = bspvision::uiText(
+                "F7 blocked: the selected trajectory intersects BSP geometry. Choose a clear arc.",
+                "F7 заблокирована: траектория пересекает геометрию BSP. Выберите свободную дугу.");
+            statusBar()->showMessage(message);
+            showTransientAutoAimStatus(message);
             return;
         }
 #if defined(Q_OS_WIN)
         if (!isSelectedTargetForeground()) {
-            statusBar()->showMessage(bspvision::uiText(
-                "Select a target window and bring it to the foreground before enabling auto aim.",
-                "Выберите целевое окно и выведите его на передний план перед включением автодоводки."));
+            const QString message = bspvision::uiText(
+                "F7 not started: select the target window and bring it to the foreground.",
+                "F7 не запустила автодоводку: выберите целевое окно и активируйте его.");
+            statusBar()->showMessage(message);
+            showTransientAutoAimStatus(message);
             return;
         }
         if (!screenReader_.isRunning()) startClShowPosReader();
         if (!screenReader_.isRunning()) {
-            statusBar()->showMessage(bspvision::uiText(
-                "cl_showpos reader is not running. Enable it and select the pos:/ang: crop first.",
-                "Не запущено чтение cl_showpos. Сначала включите его и выделите строки pos:/ang:."));
+            const QString message = bspvision::uiText(
+                "F7 not started: enable cl_showpos reading and select the pos:/ang: crop.",
+                "F7 не запустила автодоводку: включите чтение cl_showpos и выделите строки pos:/ang:.");
+            statusBar()->showMessage(message);
+            showTransientAutoAimStatus(message);
             return;
         }
         autoAimEnabled_ = true;
+        transientAutoAimStatusUntilMs_ = 0;
         autoAimStage_ = AutoAimStage::ProbeYaw;
         autoAimProbeAttempts_ = 0;
         autoAimProbeWaitTicks_ = 0;
@@ -1464,7 +1485,7 @@ private:
         if (overlay_ && !overlay_->isVisible()) startExternalOverlay();
         syncOverlay();
         statusBar()->showMessage(bspvision::uiText(
-            "Auto fire control enabled. F7 again immediately restores manual control.",
+            "Auto aim enabled. F7 again immediately restores manual control.",
             "Автоматическая СУО включена. Повторное F7 немедленно вернёт ручное управление."));
 #else
         statusBar()->showMessage(bspvision::uiText(
@@ -1522,8 +1543,8 @@ private:
                     autoAimProbeWaitTicks_ = 0;
                 } else {
                     stopAutoAim(bspvision::uiText(
-                        "AUTO AIM FAILED · yaw did not respond. If GMod uses raw input, try console command m_rawinput 0 and press F7 again.",
-                        "АВТОСУО НЕ ЗАПУЩЕНА · yaw не реагирует. Если включён raw input, попробуйте в консоли m_rawinput 0 и снова нажмите F7."));
+                        "MOUSE INPUT NOT REACHING GMod · SendInput was sent but cl_showpos yaw did not change. GMod m_rawinput 1 may ignore synthetic mouse input; open the game console, run m_rawinput 0, then press F7 again. Also run this app at the same privilege level as the game.",
+                        "МЫШЬ НЕ УПРАВЛЯЕТ GMod · SendInput отправлен, но yaw в cl_showpos не изменился. При m_rawinput 1 игра может игнорировать синтетическую мышь: откройте консоль GMod, выполните m_rawinput 0 и снова нажмите F7. Также запустите программу с теми же правами, что и игру."));
                     return;
                 }
             }
@@ -1560,8 +1581,8 @@ private:
                     autoAimProbeWaitTicks_ = 0;
                 } else {
                     stopAutoAim(bspvision::uiText(
-                        "AUTO AIM FAILED · pitch did not respond. If GMod uses raw input, try console command m_rawinput 0 and press F7 again.",
-                        "АВТОСУО НЕ ЗАПУЩЕНА · pitch не реагирует. Если включён raw input, попробуйте в консоли m_rawinput 0 и снова нажмите F7."));
+                        "MOUSE INPUT NOT REACHING GMod · SendInput was sent but cl_showpos pitch did not change. GMod m_rawinput 1 may ignore synthetic mouse input; open the game console, run m_rawinput 0, then press F7 again. Also run this app at the same privilege level as the game.",
+                        "МЫШЬ НЕ УПРАВЛЯЕТ GMod · SendInput отправлен, но pitch в cl_showpos не изменился. При m_rawinput 1 игра может игнорировать синтетическую мышь: откройте консоль GMod, выполните m_rawinput 0 и снова нажмите F7. Также запустите программу с теми же правами, что и игру."));
                     return;
                 }
             }
@@ -1604,10 +1625,50 @@ private:
 #endif
     }
 
+    QRect selectedWindowClientRect() const {
+#if defined(Q_OS_WIN)
+        const HWND target = selectedTargetWindow();
+        if (!target || !IsWindow(target)) return {};
+        RECT client{};
+        if (!GetClientRect(target, &client)) return {};
+        POINT origin{client.left, client.top};
+        if (!ClientToScreen(target, &origin)) return {};
+        const int width = client.right - client.left;
+        const int height = client.bottom - client.top;
+        if (width <= 0 || height <= 0) return {};
+        return QRect(origin.x, origin.y, width, height);
+#else
+        return {};
+#endif
+    }
+
+    void updateOverlayGeometry() {
+        if (!overlay_ || !overlay_->isVisible()) return;
+        QRect geometry = selectedWindowClientRect();
+        if (geometry.isEmpty()) {
+            QScreen *targetScreen = screen();
+            if (!targetScreen) targetScreen = QGuiApplication::primaryScreen();
+            if (targetScreen) geometry = targetScreen->geometry();
+        }
+        if (!geometry.isEmpty() && overlay_->geometry() != geometry)
+            overlay_->showOverlayOn(geometry);
+    }
+
+    void showTransientAutoAimStatus(const QString &message) {
+        autoAimStatus_ = message;
+        transientAutoAimStatusUntilMs_ = QDateTime::currentMSecsSinceEpoch() + 5000;
+        if (overlay_ && !overlay_->isVisible()) startExternalOverlay();
+        syncOverlay();
+    }
+
     void startExternalOverlay() {
-        QScreen *targetScreen = screen();
-        if (!targetScreen) targetScreen = QGuiApplication::primaryScreen();
-        if (targetScreen) overlay_->showOverlayOn(targetScreen->geometry());
+        QRect geometry = selectedWindowClientRect();
+        if (geometry.isEmpty()) {
+            QScreen *targetScreen = screen();
+            if (!targetScreen) targetScreen = QGuiApplication::primaryScreen();
+            if (targetScreen) geometry = targetScreen->geometry();
+        }
+        if (!geometry.isEmpty()) overlay_->showOverlayOn(geometry);
         syncOverlay();
     }
 
@@ -1629,7 +1690,8 @@ private:
         const double range = originX_ && targetX_
             ? std::hypot(targetX_->value() - originX_->value(), targetY_->value() - originY_->value()) : 0.0;
         overlay_->setTargetDetails(range, flightTime_ ? flightTime_->value() : 0.0, loadedMapName_);
-        const bool enabled = autoAimEnabled_ && targetDefined_ && trajectoryCalculated_;
+        const bool transientStatus = QDateTime::currentMSecsSinceEpoch() < transientAutoAimStatusUntilMs_;
+        const bool enabled = (autoAimEnabled_ && targetDefined_ && trajectoryCalculated_) || transientStatus;
         overlay_->setTargetEnabled(enabled);
 
         QString state;
@@ -1641,7 +1703,7 @@ private:
         } else {
             state = QStringLiteral("cl_showpos reader stopped");
         }
-        if (autoAimEnabled_) state = autoAimStatus_;
+        if (autoAimEnabled_ || transientStatus) state = autoAimStatus_;
         if (liveStatusLabel_) liveStatusLabel_->setText(state);
         overlay_->setTrackingStatus(state);
     }
@@ -1672,6 +1734,8 @@ private:
 
     static constexpr int AutoAimHotkeyId = 0xB570;
     bool f7WasDown_ = false;
+    ULONGLONG lastF7ToggleTimeMs_ = 0;
+    qint64 transientAutoAimStatusUntilMs_ = 0;
     AutoAimStage autoAimStage_ = AutoAimStage::Disabled;
     bool autoAimEnabled_ = false;
     int autoAimProbeAttempts_ = 0;
