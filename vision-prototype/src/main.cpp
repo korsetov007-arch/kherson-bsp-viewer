@@ -95,7 +95,9 @@ protected:
             painter.drawRect(selection);
             painter.setPen(QColor(245, 248, 252));
             painter.setBrush(QColor(20, 27, 38, 220));
-            const QString sizeText = QStringLiteral("%1 × %2 px").arg(selection.width()).arg(selection.height());
+            const qreal ratio = screen_ ? screen_->devicePixelRatio() : 1.0;
+            const QString sizeText = QStringLiteral("%1 × %2 physical px")
+                .arg(qRound(selection.width() * ratio)).arg(qRound(selection.height() * ratio));
             QRect label(selection.left(), std::max(92, selection.top() - 28), 140, 24);
             if (label.right() > width()) label.moveRight(width() - 8);
             painter.drawRoundedRect(label, 4, 4);
@@ -139,19 +141,19 @@ protected:
         cursorPosition_ = event->position().toPoint();
         dragging_ = false;
         const QRect selected = currentRect().intersected(rect());
-        if (selected.width() < 160 || selected.height() < 32) {
+        const qreal ratio = screen_ ? screen_->devicePixelRatio() : 1.0;
+        const QRect physicalPixels(
+            qRound(selected.x() * ratio), qRound(selected.y() * ratio),
+            qRound(selected.width() * ratio), qRound(selected.height() * ratio));
+        if (physicalPixels.width() < 200 || physicalPixels.height() < 45) {
             message_ = bspvision::uiText(
-                "Area too small. Drag at least 160 × 32 px around the text; Esc cancels.",
-                "Область слишком мала. Выделите не менее 160 × 32 px вокруг текста; Esc — отмена.");
+                "Crop too small. Select at least 200 × 45 physical pixels around the text; Esc cancels.",
+                "Область слишком мала. Выделите не менее 200 × 45 физических пикселей вокруг текста; Esc — отмена.");
             update();
             event->accept();
             return;
         }
 
-        const qreal ratio = screen_ ? screen_->devicePixelRatio() : 1.0;
-        const QRect physicalPixels(
-            qRound(selected.x() * ratio), qRound(selected.y() * ratio),
-            qRound(selected.width() * ratio), qRound(selected.height() * ratio));
         finished_ = true;
         if (regionSelected) regionSelected(physicalPixels);
         close();
