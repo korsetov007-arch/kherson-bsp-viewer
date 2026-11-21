@@ -22,3 +22,5 @@ add_library(sbgl_bridge SHARED module.cpp)
 target_compile_features(sbgl_bridge PRIVATE cxx_std_17)
 target_link_libraries(sbgl_bridge PRIVATE gmod-module-base)
 set_gmod_suffix_prefix(sbgl_bridge)
+# This is a client module loaded by the local player's Lua realm, not a server module.
+set_target_properties(sbgl_bridge PROPERTIES PREFIX "gmcl_")
