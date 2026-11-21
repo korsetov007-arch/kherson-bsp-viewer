@@ -58,7 +58,7 @@ public:
         createSettingsMenu();
         rebuildInterface();
         overlay_ = new bspvision::LiveOverlay();
-        rawInputReady_ = mouseTracker_.initialize(static_cast<quintptr>(winId()));
+        rawInputReady_ = mouseTracker_.initialize(reinterpret_cast<quintptr>(winId()));
         mouseTracker_.anglesChanged = [this](double yaw, double pitch) {
             if (overlay_) overlay_->setCurrentAngles(yaw, pitch);
             syncOverlay();
@@ -630,7 +630,7 @@ private:
     }
 
     void startExternalOverlay() {
-        if (!rawInputReady_) rawInputReady_ = mouseTracker_.initialize(static_cast<quintptr>(winId()));
+        if (!rawInputReady_) rawInputReady_ = mouseTracker_.initialize(reinterpret_cast<quintptr>(winId()));
         if (!rawInputReady_) {
             QMessageBox::warning(this, bspvision::uiText("Raw mouse input unavailable", "Недоступен Raw Input"),
                 mouseTracker_.lastError().isEmpty()
