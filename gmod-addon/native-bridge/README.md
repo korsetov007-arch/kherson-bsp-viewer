@@ -11,11 +11,17 @@ This is the native client module + thin Lua adapter for Source BSP Geometry Lab.
 
 This is a **native Lua binary module**, not arbitrary DLL injection. GMod's module loader loads it through its documented `require` API.
 
-## Build the native module
+## One-click install
 
-Requirements: Visual Studio 2022 with Desktop development with C++, CMake, Git, and a 64-bit Windows Garry's Mod client.
+From the repository, double-click `gmod-addon/install-sbgl-bridge.bat`. It attempts to find the Steam installation, builds the x64 module with CMake, then copies the DLL and Lua adapter into the Garry's Mod folders. Requirements: Visual Studio 2022 with Desktop development with C++, CMake, Git, and a 64-bit Windows Garry's Mod client.
 
-From this folder:
+If the game is in a custom location, run PowerShell:
+
+```powershell
+.\gmod-addon\install-sbgl-bridge.ps1 -GamePath "D:\SteamLibrary\steamapps\common\GarrysMod"
+```
+
+The manual build path is also available from this folder:
 
 ```powershell
 cmake -S . -B build -A x64
@@ -36,6 +42,8 @@ Copy `../source_bsp_geometry_lab/lua/autorun/client/cl_sbgl_live.lua` to:
 
 Restart GMod. The adapter will attempt to load the native module and reconnect when the Qt app starts.
 
-## Important status
+## Compatibility and test status
 
-This is source code, not a prebuilt/release-verified DLL. Build and test it for the exact client architecture. The Qt application must listen on the named pipe and implement the JSON protocol; do not consider the end-to-end bridge finished until that integration is present and tested in-game.
+The Qt app now listens on the named pipe `SBGLBridge`, receives telemetry JSON, and sends target-marker commands back to the Lua adapter. The module source is not a prebuilt/release-verified DLL: the installer builds it locally. This repository change has not been compiled or verified in-game yet.
+
+A server/client configuration that blocks local client Lua or binary modules prevents the adapter from loading; this bridge does not bypass that restriction. LVS vehicle/weapon APIs are best-effort and need testing with each vehicle addon.
