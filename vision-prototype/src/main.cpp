@@ -57,6 +57,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <QVector3D>
@@ -347,6 +348,7 @@ private:
         screenReaderStatusLabel_ = nullptr;
         cropRegionLabel_ = nullptr;
         screenReaderEnabledCheck_ = nullptr;
+        legacyMouseInputCheck_ = nullptr;
         targetWindowCombo_ = nullptr;
         screenCaptureX_ = screenCaptureY_ = screenCaptureWidth_ = screenCaptureHeight_ = nullptr;
         useScreenPositionButton_ = nullptr;
@@ -724,6 +726,22 @@ private:
             bspvision::uiText("Enable screen reader", "Включить чтение с экрана"), screenGroup);
         screenReaderEnabledCheck_->setChecked(screenSettings.value(QStringLiteral("clShowPos/enabled"), false).toBool());
         screenLayout->addWidget(screenReaderEnabledCheck_);
+
+        legacyMouseInputCheck_ = new QCheckBox(
+            bspvision::uiText(
+                "Before F7, set GMod m_rawinput 0 through the developer console (console enabled and closed)",
+                "Перед F7 установить GMod m_rawinput 0 через консоль (консоль включена и закрыта)"),
+            screenGroup);
+        legacyMouseInputCheck_->setChecked(
+            screenSettings.value(QStringLiteral("autoAim/setLegacyMouseInput"), true).toBool());
+        legacyMouseInputCheck_->setToolTip(bspvision::uiText(
+            "This sends the console-toggle key, the command m_rawinput 0, Enter, and the console-toggle key again. Disable this if your console key was rebound.",
+            "Отправляет клавишу консоли, команду m_rawinput 0, Enter и клавишу консоли ещё раз. Отключите, если переназначили клавишу консоли."));
+        screenLayout->addWidget(legacyMouseInputCheck_);
+        connect(legacyMouseInputCheck_, &QCheckBox::toggled, this, [](bool enabled) {
+            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            settings.setValue(QStringLiteral("autoAim/setLegacyMouseInput"), enabled);
+        });
 
         auto *selectCropButton = new QPushButton(
             bspvision::uiText("Select crop with mouse", "Выделить область мышью"), screenGroup);
@@ -1466,6 +1484,15 @@ private:
             showTransientAutoAimStatus(message);
             return;
         }
+        if (legacyMouseInputCheck_ && legacyMouseInputCheck_->isChecked() &&
+            !requestLegacyMouseInputMode()) {
+            const QString message = bspvision::uiText(
+                "Could not send the GMod compatibility command. Run m_rawinput 0 in the game console and check that this app and GMod run at the same privilege level.",
+                "Не удалось отправить команду совместимости GMod. Выполните m_rawinput 0 в игровой консоли и проверьте, что программа и GMod запущены с одинаковыми правами.");
+            statusBar()->showMessage(message);
+            showTransientAutoAimStatus(message);
+            return;
+        }
         if (!screenReader_.isRunning()) startClShowPosReader();
         if (!screenReader_.isRunning()) {
             const QString message = bspvision::uiText(
@@ -1494,6 +1521,56 @@ private:
         statusBar()->showMessage(bspvision::uiText(
             "Automatic mouse control is currently supported only on Windows.",
             "Автоматическое управление мышью сейчас поддерживается только в Windows."));
+#endif
+    }
+
+    bool requestLegacyMouseInputMode() {
+#if defined(Q_OS_WIN)
+        if (!isSelectedTargetForeground()) return false;
+
+        // GMod's default m_rawinput 1 may ignore synthetic SendInput mouse deltas.
+        // This opt-in mode sends the console command before probing mouse response.
+        QVector<INPUT> inputs;
+        inputs.reserve(32);
+        const auto addScanKey = [&inputs](WORD scanCode, bool released) {
+            INPUT item{};
+            item.type = INPUT_KEYBOARD;
+            item.ki.wScan = scanCode;
+            item.ki.dwFlags = KEYEVENTF_SCANCODE | (released ? KEYEVENTF_KEYUP : 0);
+            inputs.push_back(item);
+        };
+        const auto addUnicode = [&inputs](wchar_t character, bool released) {
+            INPUT item{};
+            item.type = INPUT_KEYBOARD;
+            item.ki.wScan = static_cast<WORD>(character);
+            item.ki.dwFlags = KEYEVENTF_UNICODE | (released ? KEYEVENTF_KEYUP : 0);
+            inputs.push_back(item);
+        };
+        const auto addVirtualKey = [&inputs](WORD virtualKey, bool released) {
+            INPUT item{};
+            item.type = INPUT_KEYBOARD;
+            item.ki.wVk = virtualKey;
+            item.ki.dwFlags = released ? KEYEVENTF_KEYUP : 0;
+            inputs.push_back(item);
+        };
+
+        // Source's default console key is the grave/backtick physical key, scan 0x29.
+        addScanKey(0x29, false);
+        addScanKey(0x29, true);
+        const QString command = QStringLiteral("m_rawinput 0");
+        for (QChar ch : command) {
+            addUnicode(ch.unicode(), false);
+            addUnicode(ch.unicode(), true);
+        }
+        addVirtualKey(VK_RETURN, false);
+        addVirtualKey(VK_RETURN, true);
+        addScanKey(0x29, false);
+        addScanKey(0x29, true);
+
+        const UINT requested = static_cast<UINT>(inputs.size());
+        return SendInput(requested, inputs.data(), sizeof(INPUT)) == requested;
+#else
+        return false;
 #endif
     }
 
@@ -1778,6 +1855,7 @@ private:
     QLabel *screenReaderStatusLabel_ = nullptr;
     QLabel *cropRegionLabel_ = nullptr;
     QCheckBox *screenReaderEnabledCheck_ = nullptr;
+    QCheckBox *legacyMouseInputCheck_ = nullptr;
     QComboBox *targetWindowCombo_ = nullptr;
     QSpinBox *screenCaptureX_ = nullptr, *screenCaptureY_ = nullptr;
     QSpinBox *screenCaptureWidth_ = nullptr, *screenCaptureHeight_ = nullptr;
