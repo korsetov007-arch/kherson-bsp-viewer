@@ -12,10 +12,13 @@ Bilingual Windows desktop tool for inspecting Source Engine BSP v20 geometry and
 - Plan a projectile path in XY, XZ and oblique 3D views, and solve for low or high ideal ballistic arcs.
 - Run synthetic BSP parser tests with CTest.
 - Native SBGL Bridge integration: local named-pipe telemetry from a GMod binary Lua module, with in-game HUD marker commands. See [native bridge build and setup](../gmod-addon/native-bridge/README.md).
+- Optional Tier B screen telemetry from `cl_showpos`: DXGI Desktop Duplication capture plus pixel-template matching, with crop controls, range checks and a confidence score. No OCR engine or neural-network model is used.
 
 ## Limitations
 
-Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics. The native bridge reports camera/player telemetry exposed through the client Lua API and best-effort LVS weapon-handler data. Custom vehicle camera and barrel direction still vary by LVS addon. The binary module is source-only and must be built for the installed GMod client architecture; this repository change has not been compiled or verified in-game.
+Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics. The native bridge reports camera/player telemetry exposed through the client Lua API and best-effort LVS weapon-handler data. Custom vehicle camera and barrel direction still vary by LVS addon. The binary module is source-only and must be built for the installed GMod client architecture.
+  
+The `cl_showpos` reader is an experimental fallback, not yet verified against a live GMod screenshot. It currently captures a configurable crop from the primary monitor and searches for locally rendered fixed-width font templates. Font rasterization, game resolution, UI scale and a bright scene behind the text can reduce recognition confidence; invalid or low-confidence samples are rejected. The displayed `pos` is Source's view origin, not a guaranteed muzzle position.
 
 ## Build on Windows
 
@@ -38,6 +41,7 @@ ctest --test-dir build -C Release --output-on-failure
 3. Leave **Show skybox surfaces / Показывать поверхности скайбокса** unchecked first. Enable it only to inspect those faces.
 4. Use **Top-down XY / Сверху XY** to select horizontal coordinates, or **Orbit 3D / 3D-орбита** to rotate with the left mouse button and zoom with the wheel.
 5. Open **Ballistic lab / Баллистика**, enter/select the target coordinates, then calculate the current arc or solve for the low/high arc. The Z coordinate must be entered manually.
-6. For the live bridge, follow [the native bridge guide](../gmod-addon/native-bridge/README.md), build the module, install the Lua adapter, and restart GMod. The Qt app accepts telemetry automatically when the module connects. The in-game marker is a visual reference; it does not control input or firing.
+6. For live telemetry, the preferred route is [Native Bridge](../gmod-addon/native-bridge/README.md): build/install the module and Lua adapter, restart GMod, then launch the Viewer. The bridge connects automatically when permitted. Its in-game marker is a visual reference; it does not control input or firing.
+7. If local Lua is unavailable but `cl_showpos` is visible, expand **Screen fallback · cl_showpos**, enable the DXGI template reader, and adjust X/Y/width/height so the crop includes the `pos:` and `ang:` rows (and ideally `vel:`). The crop is relative to the primary display in screen pixels. Use **Apply crop / start** after changing it. Inspect confidence and coordinates; use **Use last pos as launch point** only after checking the view-origin/muzzle offset. The reader is an experimental first implementation and has not yet been tested against an in-game capture.
 
 For the detailed Russian/English user manual, see `docs/USER_MANUAL.md`.
