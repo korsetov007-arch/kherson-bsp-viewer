@@ -20,6 +20,7 @@ public:
     double sourcePitchDeg() const { return sourcePitchDeg_; }
     bool enabled() const { return enabled_; }
     bool gameForeground() const { return gameForeground_; }
+    bool refreshForegroundState();
     qint64 lastInputTimestampMs() const { return lastInputTimestampMs_; }
     QString lastError() const { return lastError_; }
 
