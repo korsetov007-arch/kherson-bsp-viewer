@@ -220,7 +220,7 @@ bool BspFile::load(const QString &path, QString *error) {
                     const char *nameStart = reinterpret_cast<const char *>(
                         data + textureStringDataLump.offset + nameOffset);
                     const qint64 remaining = textureStringDataLump.length - nameOffset;
-                    const void *terminator = std::memchr(nameStart, '\\0', static_cast<size_t>(remaining));
+                    const void *terminator = std::memchr(nameStart, '\0', static_cast<size_t>(remaining));
                     const qsizetype nameLength = terminator
                         ? static_cast<qsizetype>(static_cast<const char *>(terminator) - nameStart)
                         : static_cast<qsizetype>(remaining);
@@ -300,11 +300,15 @@ int BspFile::skyFaceCount() const {
 QString BspFile::summary() const {
     if (!loaded_) return uiText("No BSP loaded.", "BSP-карта не загружена.");
     const int validPolygons = facePolygons().size();
-    return QStringLiteral(
-        "File: %1\n"
-        "Format: Source BSP v%2 | Size: %3 MiB\n"
-        "Vertices: %4 | Edges: %5 | Surf edges: %6\n"
-        "Faces in lump: %7 | Valid polygon outlines: %8")
+    return uiText(
+        "File: %1\\n"
+        "Format: Source BSP v%2 | Size: %3 MiB\\n"
+        "Vertices: %4 | Edges: %5 | Surf edges: %6\\n"
+        "Faces in lump: %7 | Visible outlines (sky surfaces hidden): %8 | Sky-textured faces: %9",
+        "Файл: %1\\n"
+        "Формат: Source BSP v%2 | Размер: %3 МиБ\\n"
+        "Вершины: %4 | Рёбра: %5 | Направленные рёбра: %6\\n"
+        "Граней в lump: %7 | Видимых контуров (без скайбокса): %8 | Граней sky-материалов: %9")
         .arg(filePath_)
         .arg(version_)
         .arg(static_cast<double>(fileSize()) / (1024.0 * 1024.0), 0, 'f', 2)
@@ -315,5 +319,4 @@ QString BspFile::summary() const {
         .arg(validPolygons)
         .arg(skyFaceCount());
 }
-
 } // namespace bspvision
