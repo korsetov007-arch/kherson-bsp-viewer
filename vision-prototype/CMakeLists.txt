@@ -16,6 +16,7 @@ qt_add_executable(bsp-geometry
     src/bsp_map_view.cpp
     src/bsp_3d_view.cpp
     src/ballistics_view.cpp
+    include/app_language.hpp
     include/bsp_file.hpp
     include/bsp_map_view.hpp
     include/bsp_3d_view.hpp
