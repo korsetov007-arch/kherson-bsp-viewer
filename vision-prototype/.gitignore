@@ -1,0 +1,8 @@
+build/
+out/
+cmake-build-*/
+*.user
+*.suo
+*.pdb
+*.obj
+*.exe
