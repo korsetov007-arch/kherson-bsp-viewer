@@ -35,6 +35,21 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    bspvision::BspPolygon slope;
+    slope.vertices = {{0, 0, 0}, {128, 0, 256}, {0, 128, 0}};
+    bspvision::Heightfield sloped;
+    if (!sloped.build({slope}, 8.0, 64, &error)) {
+        std::cerr << "FAIL: sloped heightfield rejected: " << error.toStdString() << '\\n';
+        return 1;
+    }
+    if (sloped.contours128().isEmpty())
+        return 1;
+    for (const QLineF &line : sloped.contours128()) {
+        if (!std::isfinite(line.x1()) || !std::isfinite(line.y1()) ||
+            !std::isfinite(line.x2()) || !std::isfinite(line.y2()))
+            return 1;
+    }
+
     QString invalidError;
     if (heightfield.build({}, 16.0, 64, &invalidError))
         return 1;
