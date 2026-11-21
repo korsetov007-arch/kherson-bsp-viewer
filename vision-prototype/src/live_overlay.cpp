@@ -106,159 +106,35 @@ void LiveOverlay::showEvent(QShowEvent *event) {
 void LiveOverlay::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event);
     QPainter painter(this);
-    // Explicitly clear old pixels when the game loses focus or the overlay is disabled.
     painter.setCompositionMode(QPainter::CompositionMode_Source);
     painter.fillRect(rect(), Qt::transparent);
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     if (!targetEnabled_) return;
 
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    const double screenW = width();
+    // Keep a compact status panel only. Do not draw target rings, crosshairs,
+    // projected aim points, arrows, or guide lines over the game.
     const double screenH = height();
-    const double cx = screenW * 0.5;
-    const double cy = screenH * 0.5;
-    const double hfov = qDegreesToRadians(horizontalFov_);
-    const double vfov = 2.0 * std::atan(std::tan(hfov * 0.5) * screenH / std::max(1.0, screenW));
-    const QColor panel(12, 18, 26, 210);
-
-    if (targetEnabled_) {
-        const double yawDelta = wrapDegrees(desiredYaw_ - currentYaw_);
-        const double pitchDelta = desiredPitch_ - currentPitch_;
-        double projectedX = cx;
-        double projectedY = cy;
-        bool offScreen = false;
-        const bool safelyInFront = std::abs(yawDelta) < 88.0 && std::abs(pitchDelta) < 88.0;
-        if (safelyInFront) {
-            projectedX = cx - std::tan(qDegreesToRadians(yawDelta)) /
-                std::tan(hfov * 0.5) * cx;
-            projectedY = cy + std::tan(qDegreesToRadians(pitchDelta)) /
-                std::tan(vfov * 0.5) * cy;
-        } else {
-            const double dx = yawDelta / std::max(1.0, horizontalFov_ * 0.5);
-            const double dy = pitchDelta / std::max(1.0, qRadiansToDegrees(vfov) * 0.5);
-            const double scale = std::max({std::abs(dx), std::abs(dy), 0.001});
-            projectedX = cx - (dx / scale) * (cx - 38.0);
-            projectedY = cy + (dy / scale) * (cy - 72.0);
-            offScreen = true;
-        }
-
-        const bool inViewport = safelyInFront && projectedX >= 0.0 &&
-            projectedX < screenW && projectedY >= 0.0 && projectedY < screenH;
-        if (!inViewport) offScreen = true;
-        const double margin = 32.0;
-        const QPointF requestedPoint(
-            std::clamp(projectedX, margin, screenW - margin),
-            std::clamp(projectedY, margin, screenH - margin));
-
-        // Smooth the aim marker independently of the 30 Hz telemetry sampler.
-        // The time-based filter keeps motion visually continuous at different refresh rates.
-        if (!targetSmoothingClock_.isValid()) {
-            targetSmoothingClock_.start();
-            smoothedTargetScreen_ = requestedPoint;
-            hasSmoothedTargetScreen_ = true;
-        } else {
-            const qint64 elapsedMs = std::clamp<qint64>(
-                targetSmoothingClock_.restart(), 1, 100);
-            const double alpha = 1.0 - std::exp(-static_cast<double>(elapsedMs) / 46.0);
-            if (!hasSmoothedTargetScreen_) {
-                smoothedTargetScreen_ = requestedPoint;
-                hasSmoothedTargetScreen_ = true;
-            } else {
-                smoothedTargetScreen_ += (requestedPoint - smoothedTargetScreen_) * alpha;
-            }
-        }
-
-        // Small hysteresis prevents the lock colour from flickering at the edge.
-        const double rawErrorPixels = std::hypot(projectedX - cx, projectedY - cy);
-        if (!targetLocked_ && inViewport && rawErrorPixels <= 19.0)
-            targetLocked_ = true;
-        else if (targetLocked_ && (!inViewport || rawErrorPixels > 29.0))
-            targetLocked_ = false;
-
-        const QPointF marker = smoothedTargetScreen_;
-        const QColor accent = targetLocked_ ? QColor(66, 246, 151, 250)
-            : (offScreen ? QColor(255, 171, 76, 248) : QColor(255, 205, 99, 248));
-        painter.save();
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 34),
-                            9.0, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(QPointF(cx, cy), marker);
-        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 86),
-                            2.0, Qt::DashLine, Qt::RoundCap));
-        painter.drawLine(QPointF(cx, cy), marker);
-
-        // Layered rings and separated arc segments read cleanly over bright or dark scenes.
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 28),
-                            10.0, Qt::SolidLine, Qt::RoundCap));
-        painter.drawEllipse(marker, 24.0, 24.0);
-        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 92),
-                            4.0, Qt::SolidLine, Qt::RoundCap));
-        painter.drawEllipse(marker, 21.0, 21.0);
-        painter.setPen(QPen(accent, 2.2, Qt::SolidLine, Qt::RoundCap));
-        painter.drawArc(QRectF(marker.x() - 18.0, marker.y() - 18.0, 36.0, 36.0),
-                        24 * 16, 132 * 16);
-        painter.drawArc(QRectF(marker.x() - 18.0, marker.y() - 18.0, 36.0, 36.0),
-                        204 * 16, 132 * 16);
-        painter.setPen(QPen(QColor(245, 250, 255, 205), 1.1, Qt::SolidLine, Qt::RoundCap));
-        painter.drawEllipse(marker, 13.5, 13.5);
-
-        painter.setPen(QPen(accent, 2.2, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(marker + QPointF(-30.0, 0.0), marker + QPointF(-23.0, 0.0));
-        painter.drawLine(marker + QPointF(23.0, 0.0), marker + QPointF(30.0, 0.0));
-        painter.drawLine(marker + QPointF(0.0, -30.0), marker + QPointF(0.0, -23.0));
-        painter.drawLine(marker + QPointF(0.0, 23.0), marker + QPointF(0.0, 30.0));
-        painter.setPen(QPen(QColor(247, 250, 255, 225), 1.2));
-        painter.drawLine(QPointF(cx - 9.0, cy), QPointF(cx + 9.0, cy));
-        painter.drawLine(QPointF(cx, cy - 9.0), QPointF(cx, cy + 9.0));
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(accent);
-        painter.drawEllipse(marker, targetLocked_ ? 4.5 : 3.4, targetLocked_ ? 4.5 : 3.4);
-
-        if (offScreen) {
-            painter.setPen(QPen(accent, 2.6, Qt::SolidLine, Qt::RoundCap));
-            painter.setBrush(Qt::NoBrush);
-            painter.drawLine(marker + QPointF(-7.0, -7.0), marker + QPointF(7.0, 7.0));
-            painter.drawLine(marker + QPointF(-7.0, 7.0), marker + QPointF(7.0, -7.0));
-        }
-        painter.restore();
-
-        const QString aimLabel = targetLocked_
-            ? uiText("BALLISTIC LOCK", "БАЛЛИСТИКА · НАВЕДЕНО")
-            : (offScreen ? uiText("TURN TO AIM MARKER", "ПОВЕРНИТЕСЬ К МАРКЕРУ")
-                         : uiText("BALLISTIC AIM", "БАЛЛИСТИЧЕСКАЯ НАВОДКА"));
-        painter.setPen(QColor(245, 248, 252, 242));
-        painter.drawText(QRectF(marker.x() + 36.0, marker.y() - 13.0, 220.0, 26.0),
-                         Qt::AlignLeft | Qt::AlignVCenter, aimLabel);
-    }
-
-    const QRectF panelRect(18.0, screenH - 122.0, 430.0, 100.0);
-    painter.setPen(QPen(QColor(65, 83, 100, 235), 1.0));
-    painter.setBrush(panel);
+    const QRectF panelRect(18.0, screenH - 88.0, 500.0, 66.0);
+    painter.setPen(QPen(QColor(65, 83, 100, 220), 1.0));
+    painter.setBrush(QColor(12, 18, 26, 190));
     painter.drawRoundedRect(panelRect, 7.0, 7.0);
+
     painter.setPen(QColor(90, 210, 255));
-    painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 8, panelRect.width() - 22, 18),
+    painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 7,
+                            panelRect.width() - 22, 18),
                      Qt::AlignLeft | Qt::AlignVCenter,
-                     uiText("SOURCE BSP GEOMETRY LAB  ·  EXTERNAL OVERLAY",
-                            "SOURCE BSP GEOMETRY LAB  ·  ВНЕШНИЙ ОВЕРЛЕЙ"));
-    painter.setPen(targetLocked_ ? QColor(66, 246, 151) : QColor(255, 190, 75));
-    const QString instruction = targetLocked_
-        ? uiText("AUTO FIRE CONTROL: ON TARGET · F7 OFF", "АВТОСУО: НА ЦЕЛИ · F7 ВЫКЛ")
-        : uiText("AUTO FIRE CONTROL: CORRECTING · F7 OFF", "АВТОСУО: КОРРЕКТИРОВКА · F7 ВЫКЛ");
-    painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 29, panelRect.width() - 22, 18),
-                     Qt::AlignLeft | Qt::AlignVCenter, instruction);
+                     uiText("BALLISTIC AUTO AIM", "БАЛЛИСТИЧЕСКАЯ АВТОСУО"));
+
     painter.setPen(QColor(235, 239, 245));
-    painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 50, panelRect.width() - 22, 18),
+    painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 28,
+                            panelRect.width() - 22, 18),
                      Qt::AlignLeft | Qt::AlignVCenter,
-                     uiText("Range %1 units  ·  flight %2 s", "Дальность %1 ед.  ·  полёт %2 с")
-                         .arg(range_, 0, 'f', 0).arg(flightSeconds_, 0, 'f', 2));
+                     trackingStatus_.left(100));
     painter.setPen(QColor(184, 197, 211));
-    const QString mapLabel = mapName_.isEmpty()
-        ? uiText("BSP map not specified", "BSP-карта не выбрана")
-        : uiText("Map: ", "Карта: ") + mapName_;
-    painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 72, panelRect.width() - 22, 18),
-                     Qt::AlignLeft | Qt::AlignVCenter, mapLabel + QStringLiteral("  ·  ") + trackingStatus_);
+    painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 46,
+                            panelRect.width() - 22, 16),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     uiText("F7: toggle auto aim", "F7: включить / выключить автодоводку"));
 }
 
 } // namespace bspvision
