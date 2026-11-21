@@ -9,6 +9,7 @@
 - Skybox-material detection with a toggle to show/hide sky-textured faces.
 - Russian/English interface with a persistent language setting.
 - Offline projectile-trajectory visualization with low/high ballistic-angle solving.
+- Optional local Garry's Mod client addon: camera/player telemetry, target-angle HUD marker, and no server-side addon requirement.
 - No OpenCV or computer-vision dependency in the native desktop app.
 
 ## Native Windows app
@@ -22,6 +23,10 @@ See [the desktop application README](vision-prototype/README.md) for prerequisit
 ## Browser viewer
 
 Open [index.html](index.html) in a modern browser and select a local `.bsp` file. The browser viewer is kept as a separate lightweight option.
+
+## Garry's Mod live link
+
+An optional clientside addon and bilingual install guide are in [gmod-addon](gmod-addon/README.md). It exchanges local JSON files in `garrysmod/data/source_bsp_geometry_lab/`; both the desktop app and game must run on the same Windows account, and the loaded BSP filename must match the active game map. The HUD marker is only a visual indicator; it does not control input or fire.
 
 ## Technical scope
 
