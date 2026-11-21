@@ -125,27 +125,30 @@ This is an experimental implementation. Recognition can vary with font rasteriza
 
 
 
-## Live aiming landmark / Живой круг-ориентир
+## Automatic fire control / Автоматическая СУО
 
 ### Русский
-1. Загрузите тот же BSP-файл, что используется игрой.
-2. Во вкладке «Геометрия BSP» нажмите «Задать круг-ориентир…» и щёлкните по нужному объекту на виде сверху.
-3. Укажите высоту объекта в поле Z. При работающем cl_showpos поле автоматически подставляет текущую высоту камеры как начальное значение; для точной привязки скорректируйте её вручную.
-4. Включите экранное чтение cl_showpos и задайте область со строками pos:/ang: (если ещё не настроено). Нажмите F7 — приложение покажет круг поверх игры. Повторное F7 скроет его.
-5. Круг пересчитывается из мировой координаты ориентира и текущих pos/ang. Он жёлтый, пока прицел находится вне круга, и становится зелёным, когда центр экрана попадает в радиус круга. Радиус наведения — 22 экранных пикселя.
-6. Горизонтальный FOV в настройках оверлея должен совпадать с FOV игры. Координаты ориентира автоматически сохраняются отдельно для каждого BSP-файла. Оверлей рассчитан на полноэкранный/безрамочный режим; в обычном оконном режиме центр всего монитора может не совпадать с центром игрового viewport.
+1. Во вкладке «Баллистика» задайте точку запуска и цель, скорость и гравитацию. Рассчитайте решение для цели. Для БМ-30 значение 4000 ед./с остаётся только оценкой из HUD аддона, а не подтверждённой скоростью ракеты.
+2. Включите `cl_showpos 1`. В Geometry Lab включите чтение с экрана и выделите область со строками `pos:` и `ang:`. Дождитесь, пока появятся распознанные координаты и углы.
+3. Переключитесь в Garry's Mod, встаньте в режим управления машиной и убедитесь, что поворот мыши управляет направлением наведения LVS. Нажмите F7.
+4. При первом включении программа короткими движениями мыши калибрует фактическую связь «мышь → yaw/pitch» с учётом настроенной чувствительности. Затем по свежим данным `cl_showpos` она малыми шагами корректирует направление к рассчитанным азимуту и углу возвышения.
+5. Повторное F7 немедленно отключает автодоводку и возвращает ручное управление. При потере фокуса Garry's Mod ввод мыши приостанавливается; после возврата в игру контроллер продолжает работу. Если поменять координаты или параметры баллистики, текущая автодоводка отключается до следующего F7.
 
-F7 регистрируется как глобальная клавиша Windows. Если её уже заняло другое приложение, F7 будет работать, когда окно Geometry Lab активно; приложение показывает предупреждение в строке состояния.
+**Ограничения:** контроллер управляет углами камеры через обычный относительный ввод мыши и читает `cl_showpos`; он не читает напрямую `cannon_yaw`/`cannon_pitch` из LVS и не подтверждает, что башня повторяет камеру в каждом режиме. Он работает только если LVS действительно связывает направление взгляда с наведением орудия и игра принимает синтетический ввод мыши. Если калибровка сообщает, что yaw/pitch не реагирует, приложение останавливается, а не продолжает посылать команды. Точная физика управляемой ракеты и её внешней сущности по-прежнему не моделируется.
+
+F7 зарегистрирована как глобальная клавиша Windows. Если клавиша занята другим приложением, резервный вариант работает, когда активно окно Geometry Lab. Ввод мыши отправляется только при активном процессе `gmod.exe`.
 
 ### English
-1. Load the same BSP file that the game is using.
-2. In “BSP geometry”, choose “Pick aiming circle…” and click the desired object in the top-down map.
-3. Set the object's height in the Landmark Z field. When cl_showpos is already running, the current camera height is prefilled; adjust it manually for an exact match.
-4. Enable the cl_showpos screen reader and select the pos:/ang: crop if it is not configured. Press F7 to show the circle over the game; press F7 again to hide it.
-5. The circle is projected from the landmark's Source-world position and live pos/ang. It stays yellow while the crosshair is outside and turns green when the screen center enters its radius. The aim radius is 22 screen pixels.
-6. The overlay's horizontal FOV must match the game's FOV. Landmark coordinates are saved separately for each BSP file. The overlay is intended for fullscreen/borderless mode; in a normal window the monitor center may differ from the game viewport center.
+1. In Ballistic lab, set the launch point, target, speed and gravity, then solve for the target. For the BM-30, 4000 units/s remains an estimate copied from the addon's HUD predictor, not a verified missile speed.
+2. Enable `cl_showpos 1`. Turn on the screen reader in Geometry Lab and select the visible `pos:` and `ang:` rows. Wait until decoded coordinates and angles appear.
+3. Switch to Garry's Mod, enter the vehicle-control seat and verify that mouse look controls the LVS aiming direction. Press F7.
+4. On first activation, the app uses small mouse movements to calibrate the actual mouse-to-yaw/pitch response at the current sensitivity. It then uses fresh `cl_showpos` samples to make small corrections toward the computed azimuth and elevation.
+5. Press F7 again to immediately disable auto aim and restore manual control. Mouse input pauses when Garry's Mod loses focus and resumes when the game is foreground again. Changing ballistic coordinates or parameters stops the current auto aim until F7 is pressed again.
 
-F7 is registered as a global Windows hotkey. If another application already owns it, F7 works while the Geometry Lab window is focused; a status-bar warning is shown.
+**Limitations:** the controller steers camera angles using ordinary relative mouse input and reads `cl_showpos`; it does not directly read LVS `cannon_yaw`/`cannon_pitch`, nor can it guarantee that the turret follows the camera in every mode. It works only when LVS maps view direction to gun aiming and the game accepts synthetic mouse input. If calibration reports that yaw/pitch did not respond, the app stops instead of continuing to inject input. Guided missile physics and the external rocket entity are still not simulated.
+
+F7 is registered as a global Windows hotkey. If another application owns it, the fallback works while the Geometry Lab window is focused. Mouse input is sent only while the `gmod.exe` process is foreground.
+
 
 ## Heightfield / hillshade
 
