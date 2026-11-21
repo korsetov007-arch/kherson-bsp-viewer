@@ -1,6 +1,7 @@
 #include "bsp_3d_view.hpp"
 #include "app_language.hpp"
 
+#include <QImage>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -87,12 +88,71 @@ CameraPoint toCamera(const BspVertex &vertex, const CameraBasis &camera) {
     return {dot(relative, camera.right), dot(relative, camera.up), dot(relative, camera.forward)};
 }
 
-struct RenderFace {
-    QPolygonF polygon;
+struct CameraVertex {
+    double x = 0.0;
+    double y = 0.0;
     double depth = 0.0;
-    double verticality = 0.0;
-    double height = 0.0;
+    double worldZ = 0.0;
 };
+
+struct ScreenVertex {
+    double x = 0.0;
+    double y = 0.0;
+    double inverseDepth = 0.0;
+};
+
+double edgeFunction(const ScreenVertex &a, const ScreenVertex &b,
+                    double x, double y) {
+    return (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+}
+
+// A small software depth buffer keeps overlapping BSP faces from incorrectly
+// hiding one another just because their average depths happen to sort badly.
+// Interpolating inverse depth is perspective-correct for screen-space triangles.
+void rasterizeTriangle(QImage &image, std::vector<double> &depthBuffer,
+                       const QRectF &viewport, const ScreenVertex &a,
+                       const ScreenVertex &b, const ScreenVertex &c, QRgb color) {
+    const double area = edgeFunction(a, b, c.x, c.y);
+    if (!std::isfinite(area) || std::abs(area) < 1e-8) return;
+
+    const int imageWidth = image.width();
+    const int imageHeight = image.height();
+    const int minX = std::max(0, static_cast<int>(std::floor(
+        std::max(viewport.left(), std::min({a.x, b.x, c.x})))));
+    const int maxX = std::min(imageWidth - 1, static_cast<int>(std::ceil(
+        std::min(viewport.right(), std::max({a.x, b.x, c.x})))));
+    const int minY = std::max(0, static_cast<int>(std::floor(
+        std::max(viewport.top(), std::min({a.y, b.y, c.y})))));
+    const int maxY = std::min(imageHeight - 1, static_cast<int>(std::ceil(
+        std::min(viewport.bottom(), std::max({a.y, b.y, c.y})))));
+
+    if (minX > maxX || minY > maxY) return;
+
+    constexpr double edgeTolerance = -1e-7;
+    for (int y = minY; y <= maxY; ++y) {
+        auto *pixels = reinterpret_cast<QRgb *>(image.scanLine(y));
+        const double sampleY = static_cast<double>(y) + 0.5;
+        for (int x = minX; x <= maxX; ++x) {
+            const double sampleX = static_cast<double>(x) + 0.5;
+            const double w0 = edgeFunction(b, c, sampleX, sampleY) / area;
+            const double w1 = edgeFunction(c, a, sampleX, sampleY) / area;
+            const double w2 = edgeFunction(a, b, sampleX, sampleY) / area;
+            if (w0 < edgeTolerance || w1 < edgeTolerance || w2 < edgeTolerance)
+                continue;
+
+            const double inverseDepth =
+                w0 * a.inverseDepth + w1 * b.inverseDepth + w2 * c.inverseDepth;
+            if (!std::isfinite(inverseDepth) || inverseDepth <= 0.0) continue;
+            const double depth = 1.0 / inverseDepth;
+            const size_t index = static_cast<size_t>(y) *
+                                 static_cast<size_t>(imageWidth) +
+                                 static_cast<size_t>(x);
+            if (depth >= depthBuffer[index]) continue;
+            depthBuffer[index] = depth;
+            pixels[x] = color;
+        }
+    }
+}
 
 } // namespace
 
@@ -220,84 +280,140 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
         return;
     }
 
-    // Perspective projection with a genuine camera basis. The camera distance
-    // is based on the bounding-sphere diameter, so maps with very large
-    // coordinates still fit at zoom=1 and remain in front of the near plane.
-    const double cameraDistance = mapDiameter_ * 2.5 / zoom_;
-    const CameraBasis camera = makeCamera(centerX_, centerY_, centerZ_, yaw_, pitch_, cameraDistance);
-    const double focalLength = std::min(viewport.width(), viewport.height()) * 2.0;
-    const double nearPlane = std::max(1e-4, mapDiameter_ * 1e-4);
+    const int imageWidth = std::max(1, width());
+    const int imageHeight = std::max(1, height());
+    QImage meshImage(imageWidth, imageHeight, QImage::Format_ARGB32_Premultiplied);
+    meshImage.fill(Qt::transparent);
+    std::vector<double> depthBuffer(
+        static_cast<size_t>(imageWidth) * static_cast<size_t>(imageHeight),
+        std::numeric_limits<double>::infinity());
 
-    std::vector<RenderFace> renderFaces;
-    renderFaces.reserve(static_cast<size_t>(polygons_.size()));
+    // The camera is kept far enough from the map's bounding sphere to keep the
+    // complete map in view at the default zoom. Zoom changes only camera distance.
+    const double cameraDistance = mapDiameter_ * 2.5 / zoom_;
+    const CameraBasis camera = makeCamera(
+        centerX_, centerY_, centerZ_, yaw_, pitch_, cameraDistance);
+    const double focalLength = std::min(viewport.width(), viewport.height()) * 2.0;
+    const double nearPlane = std::max(1e-4, mapDiameter_ * 1e-5);
     const double zSpan = std::max(1.0, maxZ_ - minZ_);
+    int renderedTriangles = 0;
 
     for (const BspPolygon &face : polygons_) {
         if (face.vertices.size() < 3) continue;
-        RenderFace renderFace;
-        renderFace.polygon.reserve(face.vertices.size());
-        double depthAverage = 0.0;
+
+        // Find a stable face normal; the first three points can be collinear on
+        // some imported faces even though a later triple defines the plane.
+        Vec3 normal{};
+        double normalLength = 0.0;
+        const Vec3 origin = toVec(face.vertices[0]);
+        for (qsizetype i = 1; i + 1 < face.vertices.size(); ++i) {
+            normal = cross(toVec(face.vertices[i]) - origin,
+                           toVec(face.vertices[i + 1]) - origin);
+            normalLength = magnitude(normal);
+            if (normalLength > 1e-12 && std::isfinite(normalLength)) break;
+        }
+        const double verticality = normalLength > 1e-12
+            ? std::abs(normal.z) / normalLength : 0.0;
+
         double zAverage = 0.0;
-        bool allVerticesVisible = true;
+        int finiteVertexCount = 0;
+        std::vector<CameraVertex> clipped;
+        clipped.reserve(static_cast<size_t>(face.vertices.size()) + 2U);
 
         for (const BspVertex &vertex : face.vertices) {
             const CameraPoint point = toCamera(vertex, camera);
-            if (!std::isfinite(point.depth) || point.depth <= nearPlane) {
-                allVerticesVisible = false;
-                break;
-            }
-            const double projectedX = viewport.center().x() + point.x * focalLength / point.depth;
-            const double projectedY = viewport.center().y() - point.y * focalLength / point.depth;
-            if (!std::isfinite(projectedX) || !std::isfinite(projectedY)) {
-                allVerticesVisible = false;
-                break;
-            }
-            renderFace.polygon << QPointF(projectedX, projectedY);
-            depthAverage += point.depth;
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                !std::isfinite(point.depth) || !std::isfinite(vertex.z))
+                continue;
+            clipped.push_back({point.x, point.y, point.depth,
+                               static_cast<double>(vertex.z)});
             zAverage += vertex.z;
+            ++finiteVertexCount;
         }
-        if (!allVerticesVisible || renderFace.polygon.size() < 3) continue;
-
-        renderFace.depth = depthAverage / static_cast<double>(face.vertices.size());
-        renderFace.height = std::clamp(
-            (zAverage / static_cast<double>(face.vertices.size()) - minZ_) / zSpan, 0.0, 1.0);
-
-        const Vec3 a = toVec(face.vertices[0]);
-        const Vec3 b = toVec(face.vertices[1]);
-        const Vec3 c = toVec(face.vertices[2]);
-        const Vec3 normal = cross(b - a, c - a);
-        const double normalLength = magnitude(normal);
-        renderFace.verticality = normalLength > 1e-12
-            ? std::abs(normal.z) / normalLength : 0.0;
-
-        renderFaces.push_back(std::move(renderFace));
-    }
-
-    // Painter's algorithm: render the farthest faces first and the nearest last.
-    // This is not a z-buffer; complex intersecting BSP surfaces may still overlap.
-    std::sort(renderFaces.begin(), renderFaces.end(),
-              [](const RenderFace &left, const RenderFace &right) {
-                  return left.depth > right.depth;
-              });
-
-    for (const RenderFace &face : renderFaces) {
+        if (finiteVertexCount < 3 || clipped.size() < 3) continue;
+        zAverage /= static_cast<double>(finiteVertexCount);
+        const double normalizedHeight = std::clamp(
+            (zAverage - minZ_) / zSpan, 0.0, 1.0);
         const double shade = std::clamp(
-            62.0 + 76.0 * face.verticality + 22.0 * face.height, 40.0, 170.0);
+            62.0 + 76.0 * verticality + 22.0 * normalizedHeight, 40.0, 170.0);
         const int red = static_cast<int>(shade * 0.76);
         const int green = static_cast<int>(shade * 0.88);
         const int blue = static_cast<int>(shade);
-        painter.setPen(QPen(QColor(std::min(255, red + 18),
-                                   std::min(255, green + 18),
-                                   std::min(255, blue + 18)), 0.6));
-        painter.setBrush(QColor(red, green, blue));
-        painter.drawPolygon(face.polygon);
+        const QRgb faceColor = qRgba(red, green, blue, 255);
+
+        // Clip each polygon against the near plane before projection. Rejecting
+        // a whole face because one corner crosses the plane caused visible holes.
+        std::vector<CameraVertex> nearClipped;
+        nearClipped.reserve(clipped.size() + 2U);
+        CameraVertex previous = clipped.back();
+        bool previousInside = previous.depth >= nearPlane;
+        for (const CameraVertex &current : clipped) {
+            const bool currentInside = current.depth >= nearPlane;
+            if (currentInside != previousInside) {
+                const double denominator = current.depth - previous.depth;
+                if (std::abs(denominator) > 1e-15) {
+                    const double t = std::clamp(
+                        (nearPlane - previous.depth) / denominator, 0.0, 1.0);
+                    nearClipped.push_back({
+                        previous.x + (current.x - previous.x) * t,
+                        previous.y + (current.y - previous.y) * t,
+                        nearPlane,
+                        previous.worldZ + (current.worldZ - previous.worldZ) * t
+                    });
+                }
+            }
+            if (currentInside) nearClipped.push_back(current);
+            previous = current;
+            previousInside = currentInside;
+        }
+        if (nearClipped.size() < 3) continue;
+
+        std::vector<ScreenVertex> projected;
+        projected.reserve(nearClipped.size());
+        bool validProjection = true;
+        for (const CameraVertex &point : nearClipped) {
+            const double inverseDepth = 1.0 / point.depth;
+            const double projectedX = viewport.center().x() +
+                                      point.x * focalLength * inverseDepth;
+            const double projectedY = viewport.center().y() -
+                                      point.y * focalLength * inverseDepth;
+            if (!std::isfinite(projectedX) || !std::isfinite(projectedY) ||
+                !std::isfinite(inverseDepth)) {
+                validProjection = false;
+                break;
+            }
+            projected.push_back({projectedX, projectedY, inverseDepth});
+        }
+        if (!validProjection || projected.size() < 3) continue;
+
+        // BSP faces are convex. A fan triangulation plus a per-pixel depth buffer
+        // handles occlusion consistently for floors, walls, ceilings and terrain.
+        for (size_t i = 1; i + 1 < projected.size(); ++i) {
+            const ScreenVertex &a = projected[0];
+            const ScreenVertex &b = projected[i];
+            const ScreenVertex &c = projected[i + 1];
+            const double area = std::abs(edgeFunction(a, b, c.x, c.y));
+            if (!std::isfinite(area) || area < 1e-7) continue;
+
+            const double triangleMinX = std::min({a.x, b.x, c.x});
+            const double triangleMaxX = std::max({a.x, b.x, c.x});
+            const double triangleMinY = std::min({a.y, b.y, c.y});
+            const double triangleMaxY = std::max({a.y, b.y, c.y});
+            if (triangleMaxX < viewport.left() || triangleMinX > viewport.right() ||
+                triangleMaxY < viewport.top() || triangleMinY > viewport.bottom())
+                continue;
+
+            rasterizeTriangle(meshImage, depthBuffer, viewport, a, b, c, faceColor);
+            ++renderedTriangles;
+        }
     }
 
+    painter.drawImage(QPoint(0, 0), meshImage);
     painter.setPen(QColor(211, 216, 224));
     painter.drawText(QRectF(10, 3, width() - 20, 18), Qt::AlignLeft | Qt::AlignVCenter,
-        uiText("Orbit 3D · drag to orbit · wheel to zoom · double-click to reset · visible faces: %1",
-               "3D-орбита · тяните для вращения · колесо — масштаб · двойной щелчок — сброс · граней: %1")
-            .arg(static_cast<int>(renderFaces.size())));
+        uiText("Orbit 3D · drag to orbit · wheel to zoom · double-click to reset · triangles: %1",
+               "3D-орбита · тяните для вращения · колесо — масштаб · двойной щелчок — сброс · треугольников: %1")
+            .arg(renderedTriangles));
 }
 
 void Bsp3DView::mousePressEvent(QMouseEvent *event) {
