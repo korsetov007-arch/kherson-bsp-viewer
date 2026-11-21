@@ -3,6 +3,7 @@
 #include "bsp_file.hpp"
 
 #include <QImage>
+#include <QLineF>
 #include <QPointF>
 #include <QRectF>
 #include <QWidget>
