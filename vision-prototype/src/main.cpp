@@ -168,7 +168,6 @@ private:
             {QStringLiteral("World lights"), QString::fromUtf8("Источники света мира")},
             {QStringLiteral("Leaf faces"), QString::fromUtf8("Грани листьев")},
             {QStringLiteral("Leaf brushes"), QString::fromUtf8("Объёмы листьев")},
-            {QStringLiteral("Brushes"), QStringLiteral("Brushes")},
             {QStringLiteral("Brush sides"), QString::fromUtf8("Стороны брашей")},
             {QStringLiteral("Areas"), QString::fromUtf8("Области")},
             {QStringLiteral("Area portals"), QString::fromUtf8("Порталы областей")},
@@ -189,7 +188,32 @@ private:
             {QStringLiteral("Texture string table"), QString::fromUtf8("Таблица строк текстур")},
             {QStringLiteral("Overlays"), QString::fromUtf8("Накладки")},
             {QStringLiteral("Displacement triangles"), QString::fromUtf8("Треугольники смещений")},
-            {QStringLiteral("Map flags"), QString::fromUtf8("Флаги карты")}
+            {QStringLiteral("Map flags"), QString::fromUtf8("Флаги карты")},
+            {QStringLiteral("Brushes"), QString::fromUtf8("Браши")},
+            {QStringLiteral("Displacement lightmap alphas"), QString::fromUtf8("Альфа lightmap смещений")},
+            {QStringLiteral("Displacement lightmap samples"), QString::fromUtf8("Семплы lightmap смещений")},
+            {QStringLiteral("Game lump"), QString::fromUtf8("Игровой lump")},
+            {QStringLiteral("Leaf water data"), QString::fromUtf8("Данные воды листьев")},
+            {QStringLiteral("Primitives"), QString::fromUtf8("Примитивы")},
+            {QStringLiteral("Primitive vertices"), QString::fromUtf8("Вершины примитивов")},
+            {QStringLiteral("Primitive indices"), QString::fromUtf8("Индексы примитивов")},
+            {QStringLiteral("Clip portal vertices"), QString::fromUtf8("Вершины clip-порталов")},
+            {QStringLiteral("Leaf min distance to water"), QString::fromUtf8("Минимальная дистанция листа до воды")},
+            {QStringLiteral("Face macro texture info"), QString::fromUtf8("Макротекстуры граней")},
+            {QStringLiteral("Physics collision surface"), QString::fromUtf8("Поверхности физ. коллизий")},
+            {QStringLiteral("Water overlays"), QString::fromUtf8("Водные накладки")},
+            {QStringLiteral("Leaf ambient index HDR"), QString::fromUtf8("Индексы ambient HDR листьев")},
+            {QStringLiteral("Leaf ambient index"), QString::fromUtf8("Индексы ambient листьев")},
+            {QStringLiteral("Lighting HDR"), QString::fromUtf8("Освещение HDR")},
+            {QStringLiteral("World lights HDR"), QString::fromUtf8("Источники света HDR")},
+            {QStringLiteral("Leaf ambient lighting HDR"), QString::fromUtf8("Ambient-освещение HDR листьев")},
+            {QStringLiteral("Leaf ambient lighting"), QString::fromUtf8("Ambient-освещение листьев")},
+            {QStringLiteral("XZIP packed file"), QString::fromUtf8("Упакованный XZIP-файл")},
+            {QStringLiteral("Faces HDR"), QString::fromUtf8("Грани HDR")},
+            {QStringLiteral("Overlay fades"), QString::fromUtf8("Затухание накладок")},
+            {QStringLiteral("Overlay system levels"), QString::fromUtf8("Уровни системы накладок")},
+            {QStringLiteral("Physics levels"), QString::fromUtf8("Уровни физики")},
+            {QStringLiteral("Displacement multiblend"), QString::fromUtf8("Многослойные смешения смещений")}
         };
         return names.value(name, name);
     }
@@ -317,7 +341,7 @@ private:
         targetZ_ = makeCoordinate(32.0, targetGroup);
         targetForm->addRow(QStringLiteral("X"), targetX_);
         targetForm->addRow(QStringLiteral("Y"), targetY_);
-        targetForm->addRow(QStringLiteral("Z / height"), targetZ_);
+        targetForm->addRow(bspvision::uiText("Z / height", "Z / высота"), targetZ_);
         auto *pickTarget = new QPushButton(bspvision::uiText("Pick XY on map…", "Выбрать X/Y на карте…"), targetGroup);
         targetForm->addRow(pickTarget);
 
