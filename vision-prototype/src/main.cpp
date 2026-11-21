@@ -540,6 +540,7 @@ private:
 
         auto invalidateSolution = [this] {
             trajectoryCalculated_ = false;
+            if (ballisticsView_) ballisticsView_->clearTrajectory();
             if (ballisticsSummary_) {
                 ballisticsSummary_->setText(bspvision::uiText(
                     "Parameters changed. Recalculate the trajectory to refresh the overlay.",
@@ -565,6 +566,7 @@ private:
         double pitch = qDegreesToRadians(pitch_->value());
         double duration = flightTime_->value();
         trajectoryCalculated_ = false;
+        if (ballisticsView_) ballisticsView_->clearTrajectory();
         syncOverlay();
         targetDefined_ = targetDefined_ || solveTarget;
 
