@@ -10,6 +10,7 @@
 - **3D map preview** in `src/bsp_3d_view.cpp`; drag-to-rotate and wheel-to-zoom, with bounds computed from the currently visible polygons.
 - **Ballistic view** in `src/ballistics_view.cpp`; draws trajectory in XY, XZ and oblique 3D projections, with the visible BSP geometry overlaid.
 - **Parser tests** in `tests/bsp_file_tests.cpp`; include BSP header/geometry validation, texture metadata resolution, sky face filtering, and invalid-input handling.
+- **Screen fallback** in `src/cl_showpos_reader.cpp`; DXGI Desktop Duplication captures a configurable crop on the primary display, a binary pixel-template matcher anchors on the `pos:` label and decodes numeric cells, then numeric/range validation produces a confidence-scored sample. The parser is tested independently of the desktop capture device.
 
 ## Ballistic model
 
@@ -21,3 +22,4 @@ The UI accepts start/target XYZ coordinates, speed, gravity, yaw, elevation and 
 - This is not a full Source engine renderer: it does not render material textures, use a GPU z-buffer, or reproduce engine skybox rendering.
 - Sky-surface classification relies on texture names encoded in the BSP; incomplete or unusual metadata may prevent a match.
 - The ballistic model does not simulate collision, map occlusion, drag, splash radius, weapon-specific behavior or engine/server physics.
+- The screen fallback currently supports the primary display only. It depends on `cl_showpos` being visible and on matching the rendered font; low-confidence samples are rejected. `pos` is the view origin, not necessarily the weapon muzzle.
