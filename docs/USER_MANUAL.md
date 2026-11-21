@@ -122,3 +122,22 @@ This mode does not use Lua, process-memory access or a neural network. It captur
 5. The Use last pos as launch point button copies the decoded position into the trajectory origin. `pos` is Source `MainViewOrigin`, not a guaranteed muzzle location; verify camera-to-weapon offset for the vehicle.
 
 This is an experimental first implementation and has not been validated against an actual GMod screenshot. Recognition can vary with font rasterization, resolution, UI scaling and scene background. Prefer Native Bridge when available.
+
+
+## Heightfield / hillshade
+
+### Русский
+
+На вкладке «Геометрия BSP» включите **«Рельеф: heightfield / hillshade»**, чтобы по запросу растеризовать треугольники карты в сетку высот. Строится два слоя на XY-ячейку: `ground` — минимальная найденная высота вверх-ориентированных поверхностей; `canopy` — максимальная. Серый hillshade помогает визуально оценить рельеф.
+
+Первая реализация использует размер ячейки 16 Source units (для крупных карт размер автоматически увеличивается, чтобы каждая сторона не превышала 2048 ячеек). Сетка предназначена для обзора и предварительных расчётов, а не является полной collision-моделью Source: вертикальные поверхности, закрытые внутренние пространства, некоторые ориентации граней и динамические/static props пока не моделируются. Используйте её как визуальный слой, не как доказательство проходимости или точной видимости.
+
+При загрузке другой карты кэш высот сбрасывается; построение выполняется только после включения переключателя.
+
+### English
+
+On the BSP Geometry tab, enable **Hillshade heightfield** to rasterize map triangles into a height grid on demand. Each XY cell stores two layers: `ground` is the minimum sampled height from upward-facing surfaces, and `canopy` is the maximum. The grayscale hillshade provides a quick visual read of terrain shape.
+
+The first implementation uses 16 Source units per cell (for large maps, the cell size automatically increases so no dimension exceeds 2048 cells). It is a visualization and preliminary analysis layer, not a complete Source collision model: vertical surfaces, enclosed multi-level spaces, some face orientations, and dynamic/static props are not fully represented. Do not treat it as proof of walkability or exact line-of-sight.
+
+The cache resets when a new map is loaded; rasterization starts only when the checkbox is enabled.
