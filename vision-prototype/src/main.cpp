@@ -73,7 +73,7 @@ public:
             if (bridgeSocket_) {
                 connect(bridgeSocket_, &QLocalSocket::readyRead, this, [this] { readBridgeMessages(); });
                 connect(bridgeSocket_, &QLocalSocket::disconnected, this, [this] {
-                    bridgeConnected_ = false; bridgeTelemetry_ = {};
+                    bridgeConnected_ = false; bridgeTelemetry_ = {}; bridgePositionInitialized_ = false;
                     if (bridgeSocket_) bridgeSocket_->deleteLater();
                     bridgeSocket_ = nullptr; syncOverlay();
                 });
@@ -596,7 +596,7 @@ private:
             .arg(duration, 0, 'f', 2)
             .arg(end.x(), 0, 'f', 1).arg(end.y(), 0, 'f', 1).arg(end.z(), 0, 'f', 1);
         if (targetDefined_) summary += bspvision::uiText(" Ideal endpoint error: %1 units.", " Ошибка в конечной точке: %1 ед.").arg(miss, 0, 'f', 1);
-        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. The external overlay estimates view angles from raw mouse input.", " Зелёный = запуск, красный = цель, янтарный = траектория. Внешний оверлей оценивает углы по сырым данным мыши.");
+        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. Live camera data requires the native bridge.", " Зелёный = запуск, красный = цель, янтарный = траектория. Для данных камеры нужен нативный мост.");
         ballisticsSummary_->setText(summary);
         syncOverlay();
     }
@@ -628,7 +628,8 @@ private:
                 if (currentPitchInit_) currentPitchInit_->setValue(angles.value("pitch").toDouble());
             }
             const auto pos = player.value("position").toObject();
-            if (!pos.isEmpty() && originX_ && originY_ && originZ_) {
+            if (!pos.isEmpty() && !bridgePositionInitialized_ && originX_ && originY_ && originZ_) {
+                bridgePositionInitialized_ = true;
                 originX_->setValue(pos.value("x").toDouble());
                 originY_->setValue(pos.value("y").toDouble());
                 originZ_->setValue(pos.value("z").toDouble());
@@ -720,6 +721,7 @@ private:
     QLocalSocket *bridgeSocket_ = nullptr;
     QJsonObject bridgeTelemetry_;
     bool bridgeConnected_ = false;
+    bool bridgePositionInitialized_ = false;
     qint64 lastBridgeCommandMs_ = 0;
     QString loadedMapName_;
     int pickMode_ = 0;
