@@ -364,7 +364,6 @@ private:
         auto *liveGroup = new QGroupBox(bspvision::uiText(
             "External overlay · no addon", "Внешний оверлей · без аддона"), tab);
         auto *liveLayout = new QVBoxLayout(liveGroup);
-        auto *calibrationForm = new QFormLayout();
         currentYawInit_ = makeCoordinate(0.0, liveGroup);
         currentYawInit_->setRange(-180.0, 180.0);
         currentYawInit_->setSingleStep(5.0);
@@ -380,7 +379,7 @@ private:
             field->setDecimals(4);
             field->setSingleStep(0.001);
             field->setValue(value);
-            field->setMinimumWidth(95);
+            field->setMinimumWidth(88);
             return field;
         };
         mYaw_ = makeFineField(0.022);
@@ -388,25 +387,32 @@ private:
         overlayFov_ = makeCoordinate(90.0, liveGroup);
         overlayFov_->setRange(30.0, 140.0);
         overlayFov_->setSingleStep(5.0);
-        calibrationForm->addRow(bspvision::uiText("Initial yaw from getpos (°)", "Начальный yaw из getpos (°)"), currentYawInit_);
-        calibrationForm->addRow(bspvision::uiText("Initial pitch from getpos (°)", "Начальный pitch из getpos (°)"), currentPitchInit_);
-        calibrationForm->addRow(bspvision::uiText("Sensitivity", "Чувствительность"), sensitivity_);
-        calibrationForm->addRow(QStringLiteral("m_yaw"), mYaw_);
-        calibrationForm->addRow(QStringLiteral("m_pitch"), mPitch_);
-        calibrationForm->addRow(bspvision::uiText("Horizontal FOV (°)", "Горизонтальный FOV (°)"), overlayFov_);
-        liveLayout->addLayout(calibrationForm);
-        auto *overlayButtons = new QHBoxLayout();
-        auto *pasteGetpos = new QPushButton(bspvision::uiText("Paste getpos from clipboard", "Вставить getpos из буфера"), liveGroup);
+
+        auto *calibrationRow1 = new QHBoxLayout();
+        auto *calibrationRow2 = new QHBoxLayout();
+        auto addCalibrationField = [liveGroup](QHBoxLayout *row, const QString &label, QDoubleSpinBox *field) {
+            row->addWidget(new QLabel(label, liveGroup));
+            row->addWidget(field);
+        };
+        addCalibrationField(calibrationRow1, bspvision::uiText("Initial yaw °", "Начальный yaw °"), currentYawInit_);
+        addCalibrationField(calibrationRow1, bspvision::uiText("Initial pitch °", "Начальный pitch °"), currentPitchInit_);
+        addCalibrationField(calibrationRow1, bspvision::uiText("Sensitivity", "Чувствительность"), sensitivity_);
+        calibrationRow1->addStretch();
+        addCalibrationField(calibrationRow2, QStringLiteral("m_yaw"), mYaw_);
+        addCalibrationField(calibrationRow2, QStringLiteral("m_pitch"), mPitch_);
+        addCalibrationField(calibrationRow2, bspvision::uiText("Horizontal FOV °", "Горизонтальный FOV °"), overlayFov_);
+        auto *pasteGetpos = new QPushButton(bspvision::uiText("Paste getpos", "Вставить getpos"), liveGroup);
         auto *startOverlay = new QPushButton(bspvision::uiText("Start overlay", "Запустить оверлей"), liveGroup);
         auto *stopOverlay = new QPushButton(bspvision::uiText("Stop overlay", "Остановить оверлей"), liveGroup);
-        overlayButtons->addWidget(pasteGetpos);
-        overlayButtons->addWidget(startOverlay);
-        overlayButtons->addWidget(stopOverlay);
-        overlayButtons->addStretch();
-        liveLayout->addLayout(overlayButtons);
+        calibrationRow2->addWidget(pasteGetpos);
+        calibrationRow2->addWidget(startOverlay);
+        calibrationRow2->addWidget(stopOverlay);
+        liveLayout->addLayout(calibrationRow1);
+        liveLayout->addLayout(calibrationRow2);
+
         liveStatusLabel_ = new QLabel(bspvision::uiText(
-            "Copy the getpos output from the game console, then paste it here. The overlay tracks raw mouse movement while Garry's Mod is focused.",
-            "Скопируйте вывод getpos из консоли игры и вставьте сюда. Оверлей отслеживает сырые движения мыши, пока Garry's Mod активен."), liveGroup);
+            "Run getpos in the game console, copy its output, then paste it here. Mouse deltas are tracked only while Garry's Mod is the foreground window.",
+            "Выполните getpos в консоли игры, скопируйте вывод и вставьте сюда. Движения мыши учитываются, только когда Garry's Mod активен."), liveGroup);
         liveStatusLabel_->setWordWrap(true);
         liveLayout->addWidget(liveStatusLabel_);
         liveTelemetryLabel_ = new QLabel(liveGroup);
