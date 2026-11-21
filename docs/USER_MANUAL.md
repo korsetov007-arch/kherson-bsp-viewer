@@ -1,6 +1,6 @@
 # Source BSP Geometry Lab — user manual / руководство пользователя
 
-> Version note: this manual describes the native Qt desktop application. It supports Source BSP v20 and is an offline geometry and trajectory viewer.
+> Version note: this manual describes the native Qt desktop application. It supports Source BSP v20 and includes an optional external mouse-based overlay. The overlay setup is documented separately in [EXTERNAL_OVERLAY_RU_EN.md](EXTERNAL_OVERLAY_RU_EN.md); it estimates view angles from raw mouse deltas rather than reading internal game telemetry.
 
 # Русский
 
