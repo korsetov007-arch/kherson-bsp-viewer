@@ -1,5 +1,6 @@
 #include "bsp_file.hpp"
 #include "bsp_map_view.hpp"
+#include "bsp_3d_view.hpp"
 
 #include <QAbstractItemView>
 #include <QApplication>
@@ -208,8 +209,12 @@ private:
         layout->addWidget(bspSummary_);
 
         auto *content = new QHBoxLayout();
-        mapView_ = new bspvision::BspMapView(tab);
-        content->addWidget(mapView_, 3);
+        auto *previewTabs = new QTabWidget(tab);
+        mapView_ = new bspvision::BspMapView(previewTabs);
+        meshView_ = new bspvision::Bsp3DView(previewTabs);
+        previewTabs->addTab(mapView_, QStringLiteral("Top-down XY"));
+        previewTabs->addTab(meshView_, QStringLiteral("Orbit 3D"));
+        content->addWidget(previewTabs, 3);
 
         lumpTable_ = new QTableWidget(tab);
         lumpTable_->setColumnCount(4);
@@ -247,6 +252,7 @@ private:
 
             const QVector<bspvision::BspPolygon> polygons = bspFile_.facePolygons();
             mapView_->setMap(bspFile_.vertices(), polygons);
+            meshView_->setMap(bspFile_.vertices(), polygons);
             bspSummary_->setText(bspFile_.summary());
             populateLumpTable();
             coordinateLabel_->setText(QStringLiteral(
@@ -394,6 +400,7 @@ private:
     QLabel *coordinateLabel_ = nullptr;
     QTableWidget *lumpTable_ = nullptr;
     bspvision::BspMapView *mapView_ = nullptr;
+    bspvision::Bsp3DView *meshView_ = nullptr;
     bspvision::BspFile bspFile_;
     cv::Mat reference_;
     cv::Mat current_;
