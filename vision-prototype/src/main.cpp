@@ -198,13 +198,22 @@ private:
         auto *tab = new QWidget(tabs);
         auto *layout = new QVBoxLayout(tab);
         auto *controls = new QHBoxLayout();
-        auto *loadBsp = new QPushButton(QStringLiteral("Load Source BSP v20…"), tab);
+        auto *loadBsp = new QPushButton(bspvision::uiText("Load Source BSP v20…", "Загрузить Source BSP v20…"), tab);
         controls->addWidget(loadBsp);
+        showSkyboxCheck_ = new QCheckBox(bspvision::uiText("Show skybox surfaces", "Показывать поверхности скайбокса"), tab);
+        showSkyboxCheck_->setChecked(showSkybox_);
+        showSkyboxCheck_->setEnabled(bspFile_.isLoaded());
+        controls->addWidget(showSkyboxCheck_);
         controls->addStretch();
         layout->addLayout(controls);
+        connect(showSkyboxCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+            showSkybox_ = checked;
+            if (bspFile_.isLoaded()) refreshMapViews();
+        });
 
-        bspSummary_ = new QLabel(QStringLiteral(
-            "No map loaded. This parser currently accepts Source BSP version 20."), tab);
+        bspSummary_ = new QLabel(bspvision::uiText(
+            "No map loaded. This parser currently accepts Source BSP version 20.",
+            "Карта не загружена. Поддерживается Source BSP версии 20."), tab);
         bspSummary_->setTextInteractionFlags(Qt::TextSelectableByMouse);
         bspSummary_->setWordWrap(true);
         layout->addWidget(bspSummary_);
@@ -213,15 +222,15 @@ private:
         auto *previewTabs = new QTabWidget(tab);
         mapView_ = new bspvision::BspMapView(previewTabs);
         meshView_ = new bspvision::Bsp3DView(previewTabs);
-        previewTabs->addTab(mapView_, QStringLiteral("Top-down XY"));
-        previewTabs->addTab(meshView_, QStringLiteral("Orbit 3D"));
+        previewTabs->addTab(mapView_, bspvision::uiText("Top-down XY", "Сверху XY"));
+        previewTabs->addTab(meshView_, bspvision::uiText("Orbit 3D", "3D-орбита"));
         content->addWidget(previewTabs, 3);
 
         lumpTable_ = new QTableWidget(tab);
         lumpTable_->setColumnCount(4);
         lumpTable_->setHorizontalHeaderLabels({
-            QStringLiteral("Lump"), QStringLiteral("Bytes"),
-            QStringLiteral("Records"), QStringLiteral("Ver.")});
+            bspvision::uiText("Lump", "Lump"), bspvision::uiText("Bytes", "Байты"),
+            bspvision::uiText("Records", "Записи"), bspvision::uiText("Ver.", "Вер.")});
         lumpTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
         lumpTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
         lumpTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
@@ -232,50 +241,45 @@ private:
         content->addWidget(lumpTable_, 2);
         layout->addLayout(content, 1);
 
-        coordinateLabel_ = new QLabel(QStringLiteral(
-            "Click the map preview to inspect an XY coordinate. Z is not unique in a top-down view."),
+        coordinateLabel_ = new QLabel(bspvision::uiText(
+            "Click the map preview to inspect an XY coordinate. Z is not unique in a top-down view.",
+            "Нажмите на карту, чтобы посмотреть координаты X/Y. В виде сверху невозможно однозначно определить Z."),
             tab);
         coordinateLabel_->setWordWrap(true);
         layout->addWidget(coordinateLabel_);
-        tabs->addTab(tab, QStringLiteral("BSP geometry"));
+        tabs->addTab(tab, bspvision::uiText("BSP geometry", "Геометрия BSP"));
 
         connect(loadBsp, &QPushButton::clicked, this, [this] {
             const QString path = QFileDialog::getOpenFileName(this,
-                QStringLiteral("Open Source BSP v20 map"), {},
-                QStringLiteral("BSP maps (*.bsp);;All files (*.*)"));
+                bspvision::uiText("Open Source BSP v20 map", "Открыть карту Source BSP v20"), {},
+                bspvision::uiText("BSP maps (*.bsp);;All files (*.*)", "Карты BSP (*.bsp);;Все файлы (*.*)"));
             if (path.isEmpty()) return;
 
             QString error;
             if (!bspFile_.load(path, &error)) {
-                QMessageBox::warning(this, QStringLiteral("BSP load failed"), error);
+                QMessageBox::warning(this, bspvision::uiText("BSP load failed", "Ошибка загрузки BSP"), error);
                 return;
             }
-
-            const QVector<bspvision::BspPolygon> polygons = bspFile_.facePolygons();
-            mapView_->setMap(bspFile_.vertices(), polygons);
-            meshView_->setMap(bspFile_.vertices(), polygons);
-            ballisticsView_->setMap(bspFile_.vertices(), polygons);
-            bspSummary_->setText(bspFile_.summary());
-            populateLumpTable();
-            coordinateLabel_->setText(QStringLiteral(
-                "Click inside the preview to inspect XY coordinates. Z is ambiguous in this top-down "
-                "view because maps can contain multiple floors."));
-            statusBar()->showMessage(QStringLiteral("Loaded BSP: %1").arg(QFileInfo(path).fileName()));
+            if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
+            refreshMapViews();
+            statusBar()->showMessage(bspvision::uiText("Loaded BSP: %1", "Загружена карта BSP: %1")
+                .arg(QFileInfo(path).fileName()));
         });
 
         mapView_->pointSelected = [this](double x, double y) {
-            coordinateLabel_->setText(QStringLiteral(
-                "Selected top-down coordinate: X = %1, Y = %2. Set Z manually for the correct floor.")
+            coordinateLabel_->setText(bspvision::uiText(
+                "Selected top-down coordinate: X = %1, Y = %2. Set Z manually for the correct floor.",
+                "Выбраны координаты сверху: X = %1, Y = %2. Укажите Z вручную для нужного этажа.")
                 .arg(x, 0, 'f', 2).arg(y, 0, 'f', 2));
             if (pickMode_ == 1) {
                 originX_->setValue(x); originY_->setValue(y);
                 pickMode_ = 0;
-                statusBar()->showMessage(QStringLiteral("Launch point set from map. Set launch Z manually."));
+                statusBar()->showMessage(bspvision::uiText("Launch point set from map. Set launch Z manually.", "Точка запуска выбрана на карте. Укажите Z вручную."));
             } else if (pickMode_ == 2) {
                 targetX_->setValue(x); targetY_->setValue(y);
                 targetDefined_ = true;
                 pickMode_ = 0;
-                statusBar()->showMessage(QStringLiteral("Target point set from map. Set target Z manually if needed."));
+                statusBar()->showMessage(bspvision::uiText("Target point set from map. Set target Z manually if needed.", "Цель выбрана на карте. При необходимости укажите Z вручную."));
             }
         };
     }
@@ -295,18 +299,18 @@ private:
         auto *layout = new QVBoxLayout(tab);
         auto *controls = new QHBoxLayout();
 
-        auto *launchGroup = new QGroupBox(QStringLiteral("Launch point · Source world units"), tab);
+        auto *launchGroup = new QGroupBox(bspvision::uiText("Launch point · Source world units", "Точка запуска · единицы Source"), tab);
         auto *launchForm = new QFormLayout(launchGroup);
         originX_ = makeCoordinate(0.0, launchGroup);
         originY_ = makeCoordinate(0.0, launchGroup);
         originZ_ = makeCoordinate(32.0, launchGroup);
         launchForm->addRow(QStringLiteral("X"), originX_);
         launchForm->addRow(QStringLiteral("Y"), originY_);
-        launchForm->addRow(QStringLiteral("Z / height"), originZ_);
-        auto *pickOrigin = new QPushButton(QStringLiteral("Pick XY on map…"), launchGroup);
+        launchForm->addRow(bspvision::uiText("Z / height", "Z / высота"), originZ_);
+        auto *pickOrigin = new QPushButton(bspvision::uiText("Pick XY on map…", "Выбрать X/Y на карте…"), launchGroup);
         launchForm->addRow(pickOrigin);
 
-        auto *targetGroup = new QGroupBox(QStringLiteral("Target point"), tab);
+        auto *targetGroup = new QGroupBox(bspvision::uiText("Target point", "Целевая точка"), tab);
         auto *targetForm = new QFormLayout(targetGroup);
         targetX_ = makeCoordinate(512.0, targetGroup);
         targetY_ = makeCoordinate(0.0, targetGroup);
@@ -314,10 +318,10 @@ private:
         targetForm->addRow(QStringLiteral("X"), targetX_);
         targetForm->addRow(QStringLiteral("Y"), targetY_);
         targetForm->addRow(QStringLiteral("Z / height"), targetZ_);
-        auto *pickTarget = new QPushButton(QStringLiteral("Pick XY on map…"), targetGroup);
+        auto *pickTarget = new QPushButton(bspvision::uiText("Pick XY on map…", "Выбрать X/Y на карте…"), targetGroup);
         targetForm->addRow(pickTarget);
 
-        auto *physicsGroup = new QGroupBox(QStringLiteral("Projectile model"), tab);
+        auto *physicsGroup = new QGroupBox(bspvision::uiText("Projectile model", "Параметры снаряда"), tab);
         auto *physicsForm = new QFormLayout(physicsGroup);
         speed_ = makeCoordinate(1000.0, physicsGroup);
         speed_->setRange(1.0, 100000.0);
@@ -334,11 +338,11 @@ private:
         flightTime_ = makeCoordinate(2.0, physicsGroup);
         flightTime_->setRange(0.05, 30.0);
         flightTime_->setSingleStep(0.25);
-        physicsForm->addRow(QStringLiteral("Speed (units/s)"), speed_);
-        physicsForm->addRow(QStringLiteral("Gravity (units/s²)"), gravity_);
+        physicsForm->addRow(bspvision::uiText("Speed (units/s)", "Скорость (ед./с)"), speed_);
+        physicsForm->addRow(bspvision::uiText("Gravity (units/s²)", "Гравитация (ед./с²)"), gravity_);
         physicsForm->addRow(QStringLiteral("Yaw (°)"), yaw_);
-        physicsForm->addRow(QStringLiteral("Pitch / elevation (°)"), pitch_);
-        physicsForm->addRow(QStringLiteral("Flight time (s)"), flightTime_);
+        physicsForm->addRow(bspvision::uiText("Pitch / elevation (°)", "Угол возвышения (°)"), pitch_);
+        physicsForm->addRow(bspvision::uiText("Flight time (s)", "Время полёта (с)"), flightTime_);
 
         controls->addWidget(launchGroup, 1);
         controls->addWidget(targetGroup, 1);
@@ -346,10 +350,10 @@ private:
         layout->addLayout(controls);
 
         auto *actions = new QHBoxLayout();
-        auto *calculate = new QPushButton(QStringLiteral("Calculate current arc"), tab);
-        auto *solveLow = new QPushButton(QStringLiteral("Solve target · low arc"), tab);
-        auto *solveHigh = new QPushButton(QStringLiteral("Solve target · high arc"), tab);
-        auto *clear = new QPushButton(QStringLiteral("Clear path"), tab);
+        auto *calculate = new QPushButton(bspvision::uiText("Calculate current arc", "Рассчитать текущую дугу"), tab);
+        auto *solveLow = new QPushButton(bspvision::uiText("Solve target · low arc", "Решить для цели · низкая дуга"), tab);
+        auto *solveHigh = new QPushButton(bspvision::uiText("Solve target · high arc", "Решить для цели · высокая дуга"), tab);
+        auto *clear = new QPushButton(bspvision::uiText("Clear path", "Очистить траекторию"), tab);
         actions->addWidget(calculate);
         actions->addWidget(solveLow);
         actions->addWidget(solveHigh);
@@ -359,28 +363,29 @@ private:
 
         ballisticsView_ = new bspvision::BallisticsView(tab);
         layout->addWidget(ballisticsView_, 1);
-        ballisticsSummary_ = new QLabel(QStringLiteral(
-            "Ideal projectile model only: tune speed and gravity to the game. Obstacles, drag, splash radius and engine-specific projectile behavior are not simulated."), tab);
+        ballisticsSummary_ = new QLabel(bspvision::uiText(
+            "Ideal projectile model only: tune speed and gravity to the game. Obstacles, drag, splash radius and engine-specific projectile behavior are not simulated.",
+            "Используется идеальная модель снаряда. Подберите скорость и гравитацию под игру. Столкновения, препятствия, сопротивление воздуха и особенности конкретного оружия не моделируются."), tab);
         ballisticsSummary_->setWordWrap(true);
         layout->addWidget(ballisticsSummary_);
-        tabs->addTab(tab, QStringLiteral("Ballistic lab"));
+        tabs->addTab(tab, bspvision::uiText("Ballistic lab", "Баллистика"));
 
         connect(pickOrigin, &QPushButton::clicked, this, [this, tabs] {
             pickMode_ = 1;
-            tabs->setCurrentIndex(1);
-            statusBar()->showMessage(QStringLiteral("Click the top-down XY map to set launch X/Y; set Z in Ballistic lab."));
+            tabs->setCurrentIndex(0);
+            statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set launch X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y запуска; координату Z задайте во вкладке баллистики."));
         });
         connect(pickTarget, &QPushButton::clicked, this, [this, tabs] {
             pickMode_ = 2;
             tabs->setCurrentIndex(1);
-            statusBar()->showMessage(QStringLiteral("Click the top-down XY map to set target X/Y; set Z in Ballistic lab."));
+            statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set target X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y цели; координату Z задайте во вкладке баллистики."));
         });
         connect(calculate, &QPushButton::clicked, this, [this] { calculateArc(false); });
         connect(solveLow, &QPushButton::clicked, this, [this] { calculateArc(true, false); });
         connect(solveHigh, &QPushButton::clicked, this, [this] { calculateArc(true, true); });
         connect(clear, &QPushButton::clicked, this, [this] {
             ballisticsView_->clearTrajectory();
-            ballisticsSummary_->setText(QStringLiteral("Trajectory cleared."));
+            ballisticsSummary_->setText(bspvision::uiText("Trajectory cleared.", "Траектория очищена."));
         });
     }
 
@@ -397,8 +402,8 @@ private:
             const double dx = tx - ox, dy = ty - oy, dz = tz - oz;
             const double range = std::hypot(dx, dy);
             if (range < 0.01) {
-                QMessageBox::warning(this, QStringLiteral("Ballistic solver"),
-                    QStringLiteral("Launch point and target must differ in XY."));
+                QMessageBox::warning(this, bspvision::uiText("Ballistic solver", "Расчёт баллистики"),
+                    bspvision::uiText("Launch point and target must differ in XY.", "Точка запуска и цель должны различаться по X/Y."));
                 return;
             }
             yaw = std::atan2(dy, dx);
@@ -408,8 +413,8 @@ private:
                 const double v2 = speed * speed;
                 const double discriminant = v2 * v2 - g * (g * range * range + 2.0 * dz * v2);
                 if (discriminant < 0.0) {
-                    QMessageBox::information(this, QStringLiteral("No ballistic solution"),
-                        QStringLiteral("The target is outside the ideal projectile envelope for this speed and gravity. Increase speed, reduce gravity, or choose a nearer target."));
+                    QMessageBox::information(this, bspvision::uiText("No ballistic solution", "Нет баллистического решения"),
+                        bspvision::uiText("The target is outside the ideal projectile envelope for this speed and gravity. Increase speed, reduce gravity, or choose a nearer target.", "Цель недостижима при заданной скорости и гравитации в идеальной модели. Увеличьте скорость, уменьшите гравитацию или выберите цель ближе."));
                     return;
                 }
                 const double root = std::sqrt(discriminant);
@@ -418,8 +423,8 @@ private:
             }
             const double horizontalSpeed = speed * std::cos(pitch);
             if (horizontalSpeed <= 0.01) {
-                QMessageBox::warning(this, QStringLiteral("Ballistic solver"),
-                    QStringLiteral("The computed elevation is too steep for a stable horizontal range."));
+                QMessageBox::warning(this, bspvision::uiText("Ballistic solver", "Расчёт баллистики"),
+                    bspvision::uiText("The computed elevation is too steep for a stable horizontal range.", "Полученный угол слишком велик для устойчивого расчёта дальности."));
                 return;
             }
             duration = range / horizontalSpeed;
@@ -445,16 +450,18 @@ private:
         const QVector3D origin(static_cast<float>(ox), static_cast<float>(oy), static_cast<float>(oz));
         const QVector3D target(static_cast<float>(tx), static_cast<float>(ty), static_cast<float>(tz));
         ballisticsView_->setTrajectory(points, origin, target, targetDefined_);
+        trajectoryCalculated_ = true;
         const QVector3D end = points.last();
         const double miss = targetDefined_ ? (end - target).length() : 0.0;
-        QString summary = QStringLiteral(
-            "Yaw %1° · elevation %2° · flight %3 s · endpoint X %4, Y %5, Z %6.")
+        QString summary = bspvision::uiText(
+            "Yaw %1° · elevation %2° · flight %3 s · endpoint X %4, Y %5, Z %6.",
+            "Азимут %1° · угол возвышения %2° · время полёта %3 с · конечная точка X %4, Y %5, Z %6.")
             .arg(qRadiansToDegrees(yaw), 0, 'f', 2)
             .arg(qRadiansToDegrees(pitch), 0, 'f', 2)
             .arg(duration, 0, 'f', 2)
             .arg(end.x(), 0, 'f', 1).arg(end.y(), 0, 'f', 1).arg(end.z(), 0, 'f', 1);
-        if (targetDefined_) summary += QStringLiteral(" Ideal endpoint error: %1 units.").arg(miss, 0, 'f', 1);
-        summary += QStringLiteral(" Green = launch, red = target, amber = trajectory. This is a visual planning aid, not a live-game controller.");
+        if (targetDefined_) summary += bspvision::uiText(" Ideal endpoint error: %1 units.", " Ошибка в конечной точке: %1 ед.").arg(miss, 0, 'f', 1);
+        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. This is a visual planning aid, not a live-game controller.", " Зелёный = запуск, красный = цель, янтарный = траектория. Это визуальный планировщик, он не управляет игрой.");
         ballisticsSummary_->setText(summary);
     }
 
@@ -466,7 +473,7 @@ private:
             const QString records = lump.recordCount >= 0
                 ? QString::number(lump.recordCount) : QStringLiteral("—");
             const QStringList columns{
-                lump.name,
+                localizeLumpName(lump.name),
                 QString::number(lump.length),
                 records,
                 QString::number(lump.version)
@@ -474,13 +481,22 @@ private:
             for (int col = 0; col < columns.size(); ++col) {
                 auto *item = new QTableWidgetItem(columns[col]);
                 if (col == 0) item->setToolTip(
-                    QStringLiteral("Offset: %1 | FourCC: 0x%2")
+                    bspvision::uiText("Offset: %1 | FourCC: 0x%2", "Смещение: %1 | FourCC: 0x%2")
                         .arg(lump.offset)
                         .arg(lump.fourCC, 8, 16, QLatin1Char('0')));
                 lumpTable_->setItem(row, col, item);
             }
         }
     }
+
+    QTabWidget *tabs_ = nullptr;
+    QMenu *settingsMenu_ = nullptr;
+    QMenu *languageMenu_ = nullptr;
+    QAction *englishAction_ = nullptr;
+    QAction *russianAction_ = nullptr;
+    QCheckBox *showSkyboxCheck_ = nullptr;
+    bool showSkybox_ = false;
+    bool trajectoryCalculated_ = false;
 
     QLabel *bspSummary_ = nullptr;
     QLabel *coordinateLabel_ = nullptr;
