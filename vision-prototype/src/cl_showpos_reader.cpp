@@ -333,7 +333,11 @@ public:
         const double angleLabelDistance = maskDistance(
             mask, anchor_.x, anchor_.y + lineStep, angleLabel);
         if (angleLabelDistance > 0.64) {
-            if (error) *error = QStringLiteral("The pos: label was found, but the ang: line did not match the expected template.");
+            // A busy or changing background can produce a stale anchor. Periodic
+            // recalibration lets the matcher recover instead of staying locked
+            // to a bad location indefinitely.
+            calibrated_ = false;
+            if (error) *error = QStringLiteral("The pos: label was found, but the ang: line did not match the expected template; recalibrating.");
             return false;
         }
 
@@ -365,7 +369,8 @@ public:
             (pos.confidence + ang.confidence) * 0.25,
             0.0, 1.0);
         if (parsed.confidence < 0.35) {
-            if (error) *error = QStringLiteral("Read confidence is too low; keep the game visible and adjust the crop.");
+            calibrated_ = false;
+            if (error) *error = QStringLiteral("Read confidence is too low; recalibrating the text anchor.");
             return false;
         }
 
