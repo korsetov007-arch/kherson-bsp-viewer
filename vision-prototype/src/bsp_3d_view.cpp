@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace bspvision {
@@ -191,7 +192,7 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
     painter.setPen(QColor(211, 216, 224));
     painter.drawText(QRectF(10, 3, width() - 20, 18), Qt::AlignLeft | Qt::AlignVCenter,
         QStringLiteral("Orbit 3D • drag to rotate • mouse wheel to zoom • %1 faces")
-            .arg(renderFaces.size()));
+            .arg(static_cast<int>(renderFaces.size())));
 }
 
 void Bsp3DView::mousePressEvent(QMouseEvent *event) {
