@@ -54,7 +54,7 @@ QByteArray makeSyntheticBsp() {
     putI32(surfEdges, 4, 1);
     putI32(surfEdges, 8, 2);
 
-    QByteArray faces(112, '\0');
+    QByteArray faces(168, '\0');
     putI32(faces, 4, 0);     // firstedge
     putI16(faces, 8, 3);     // numedges
     putI16(faces, 10, 0);    // non-sky texinfo
@@ -63,14 +63,20 @@ QByteArray makeSyntheticBsp() {
     putI16(faces, 56 + 8, 3);
     putI16(faces, 56 + 10, 1); // sky texinfo
     putI16(faces, 56 + 12, -1);
+    putI32(faces, 112 + 4, 0);
+    putI16(faces, 112 + 8, 3);
+    putI16(faces, 112 + 10, 2); // non-renderable trigger texinfo
+    putI16(faces, 112 + 12, -1);
 
-    QByteArray texInfo(144, '\0');
+    QByteArray texInfo(216, '\0');
     putI32(texInfo, 68, 0);        // wall material -> texdata 0
     putI32(texInfo, 72 + 68, 1);   // sky material -> texdata 1
+    putI32(texInfo, 144 + 68, 2); // trigger material -> texdata 2
 
-    QByteArray texData(64, '\0');
+    QByteArray texData(96, '\0');
     putI32(texData, 12, 0);        // string-table ID for wall
     putI32(texData, 32 + 12, 1);   // string-table ID for sky
+    putI32(texData, 64 + 12, 2);   // string-table ID for trigger
 
     QByteArray textureStrings;
     textureStrings.append("brick/wall01");
@@ -78,10 +84,14 @@ QByteArray makeSyntheticBsp() {
     const qint32 skyNameOffset = static_cast<qint32>(textureStrings.size());
     textureStrings.append("tools/toolsskybox");
     textureStrings.append('\0');
+    const qint32 triggerNameOffset = static_cast<qint32>(textureStrings.size());
+    textureStrings.append("TOOLS/TOOLSTRIGGER");
+    textureStrings.append('\0');
 
-    QByteArray textureStringTable(8, '\0');
+    QByteArray textureStringTable(12, '\0');
     putI32(textureStringTable, 0, 0);
     putI32(textureStringTable, 4, skyNameOffset);
+    putI32(textureStringTable, 8, triggerNameOffset);
 
     const auto addLump = [&bytes](int index, const QByteArray &lump) {
         const qint32 offset = static_cast<qint32>(bytes.size());
@@ -208,18 +218,18 @@ int main(int argc, char **argv) {
     if (bsp.vertices().size() != 3) return fail("expected three vertices");
     if (bsp.edges().size() != 3) return fail("expected three edges");
     if (bsp.surfEdges().size() != 3) return fail("expected three surf edges");
-    if (bsp.faces().size() != 2) return fail("expected two faces with different materials");
+    if (bsp.faces().size() != 3) return fail("expected visible, sky and trigger faces");
     if (bsp.skyFaceCount() != 1) return fail("expected one sky-textured face");
 
     const auto polygons = bsp.facePolygons();
     if (polygons.size() != 1 || polygons.first().vertices.size() != 3)
-        return fail("default geometry should exclude the sky-textured face");
+        return fail("default geometry should exclude sky and non-renderable tool faces");
     if (polygons.first().skySurface || polygons.first().materialName != QStringLiteral("brick/wall01"))
         return fail("visible face material was not resolved correctly");
     const auto allPolygons = bsp.facePolygons(true);
     if (allPolygons.size() != 2 || !allPolygons.last().skySurface ||
         allPolygons.last().materialName != QStringLiteral("tools/toolsskybox"))
-        return fail("includeSkySurfaces should retain and classify the sky face");
+        return fail("includeSkySurfaces should retain sky faces but exclude trigger faces");
     if (polygons.first().vertices.at(1).x != 128.0F)
         return fail("face vertex coordinates were decoded incorrectly");
 

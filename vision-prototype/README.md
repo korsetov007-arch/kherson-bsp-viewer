@@ -7,6 +7,7 @@ Bilingual Windows desktop tool for inspecting Source Engine BSP v20 geometry and
 - Load a Source BSP v20 map and inspect its lump table.
 - View polygon geometry from above (XY) or in a rotatable 3D projection.
 - Detect common Source skybox material names from BSP texture metadata. Sky-textured faces are hidden by default so giant sky planes are less likely to overwhelm the level preview; use **Show skybox surfaces** to inspect them.
+- Omit non-renderable Source tool surfaces such as triggers, clips and nodraw faces from the geometry preview.
 - Switch the interface between Russian and English via **Settings → Language**. The selected language is saved for the next launch.
 - Select X/Y coordinates by clicking the map. Enter Z manually to choose the correct floor.
 - Plan a projectile path in XY, XZ and oblique 3D views, and solve for low or high ideal ballistic arcs.

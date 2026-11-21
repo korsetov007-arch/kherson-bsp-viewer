@@ -73,6 +73,23 @@ bool isSkyTexture(const QString &materialName) {
            name.startsWith(QStringLiteral("sky_"));
 }
 
+bool isNonRenderableTexture(const QString &materialName) {
+    const QString name = materialName.trimmed().toLower().replace(QLatin1Char('\\'), QLatin1Char('/'));
+    return name == QStringLiteral("tools/toolstrigger") ||
+           name == QStringLiteral("tools/toolsinvisible") ||
+           name == QStringLiteral("tools/toolsnodraw") ||
+           name == QStringLiteral("tools/toolsclip") ||
+           name == QStringLiteral("tools/toolsplayerclip") ||
+           name == QStringLiteral("tools/toolsnpcclip") ||
+           name == QStringLiteral("tools/toolsgrenadeclip") ||
+           name == QStringLiteral("tools/toolsshotclip") ||
+           name == QStringLiteral("tools/toolsareaportal") ||
+           name == QStringLiteral("tools/toolsoccluder") ||
+           name == QStringLiteral("tools/toolshint") ||
+           name == QStringLiteral("tools/toolsskip") ||
+           name == QStringLiteral("tools/toolsorigin");
+}
+
 } // namespace
 
 void BspFile::clear() {
@@ -480,7 +497,9 @@ QVector<BspPolygon> BspFile::facePolygons(bool includeSkySurfaces) const {
 
     for (qsizetype faceIndex = 0; faceIndex < faces_.size(); ++faceIndex) {
         const BspFace &face = faces_[faceIndex];
-        if (face.skySurface && !includeSkySurfaces) continue;
+        if (isNonRenderableTexture(face.materialName) ||
+            (face.skySurface && !includeSkySurfaces))
+            continue;
         if (faceIndex < displacementFacePresent_.size() && displacementFacePresent_[faceIndex] != 0) {
             const auto &triangles = displacementPolygonsByFace_[faceIndex];
             for (const BspPolygon &triangle : triangles) result.push_back(triangle);

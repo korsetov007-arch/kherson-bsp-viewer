@@ -21,6 +21,8 @@
 
 По умолчанию флажок **Показывать поверхности скайбокса** выключен. Парсер ищет названия sky-материалов в texture-info, texture-data и строковых таблицах BSP; распознанные sky-грани не передаются в обычное отображение геометрии. Это помогает убрать огромные плоскости sky из обзора уровня.
 
+Грани с невидимыми служебными материалами Source, например `tools/toolstrigger`, `tools/toolsclip` и `tools/toolsnodraw`, также не показываются. Они нужны игре для триггеров и столкновений, но не должны закрывать геометрию карты в просмотрщике.
+
 Включите флажок, если нужно проверить сами sky-поверхности. Если огромная плоскость всё равно видна при выключенном флажке, вероятно, у неё другое имя материала или в карте отсутствуют подходящие метаданные. Такой случай нужно проверять по материалам конкретного BSP; классификация не заменяет полноценный Source-рендерер. Текстуры и оригинальный skybox этим просмотрщиком не рисуются.
 
 ## 4. Навигация по геометрии
@@ -67,6 +69,8 @@ If loading fails, verify that the file is Source BSP version 20. Other versions 
 ## 3. Skybox display
 
 **Show skybox surfaces** is off by default. The parser reads material names from BSP texture-info, texture-data and string-table lumps. Faces using common sky material names are excluded from the standard geometry views, which helps prevent very large sky planes from dominating the preview.
+
+Non-renderable Source tool surfaces, such as `tools/toolstrigger`, `tools/toolsclip` and `tools/toolsnodraw`, are also omitted. The game uses these faces for triggers and collision behavior, but they should not obscure map geometry in the viewer.
 
 Enable the checkbox when you want to inspect those surfaces. If a huge plane remains visible while the checkbox is off, it may use an unusual material name or the BSP may lack usable texture metadata. That needs verification against the specific map; this filter is not a replacement for a full Source renderer. The app does not render Source textures or the original skybox.
 
