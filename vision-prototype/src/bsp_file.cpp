@@ -443,10 +443,10 @@ bool BspFile::load(const QString &path, QString *error) {
                 const qint32 c = a + side;
                 const qint32 d = c + 1;
                 const qint32 firstTri = (row * divisions + col) * 2;
-                // Grid row follows p00 -> p10 and column follows p00 -> p01.
-                // Keep triangle winding aligned with the parent BSP face so
-                // upward-facing terrain is also accepted by the heightfield rasterizer.
-                const qint32 triIndices[2][3] = {{a, c, b}, {b, c, d}};
+                // The second grid index follows p00 -> p10; the first follows
+                // p00 -> p01. Preserve the parent face winding so upward-facing
+                // displacement terrain is accepted by the heightfield rasterizer.
+                const qint32 triIndices[2][3] = {{a, b, c}, {b, d, c}};
                 for (qint32 half = 0; half < 2; ++half) {
                     const qint32 triIndex = firstTri + half;
                     const quint16 tags = triangleTags[triIndex];
