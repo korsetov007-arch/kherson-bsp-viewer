@@ -16,6 +16,7 @@ qt_add_executable(bsp-geometry
     src/bsp_map_view.cpp
     src/bsp_3d_view.cpp
     src/ballistics_view.cpp
+    include/ballistics_model.hpp
     src/live_overlay.cpp
     src/cl_showpos_reader.cpp
     src/heightfield.cpp
@@ -106,6 +107,19 @@ if(BUILD_TESTING)
         target_compile_options(triangle-bvh-tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME triangle-bvh-tests COMMAND triangle-bvh-tests)
+
+    add_executable(ballistics-model-tests
+        tests/ballistics_model_tests.cpp
+        include/ballistics_model.hpp
+    )
+    target_include_directories(ballistics-model-tests PRIVATE include)
+    target_link_libraries(ballistics-model-tests PRIVATE Qt6::Core Qt6::Gui)
+    if(MSVC)
+        target_compile_options(ballistics-model-tests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(ballistics-model-tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME ballistics-model-tests COMMAND ballistics-model-tests)
 
     add_executable(world-landmark-tests
         tests/world_landmark_tests.cpp
