@@ -551,6 +551,7 @@ private:
         controls->addWidget(landmarkZ_);
         pickLandmarkButton_ = new QPushButton(
             bspvision::uiText("Pick aiming circle…", "Задать круг-ориентир…"), tab);
+        pickLandmarkButton_->setEnabled(bspFile_.isLoaded());
         controls->addWidget(pickLandmarkButton_);
         auto *clearLandmark = new QPushButton(
             bspvision::uiText("Clear", "Убрать"), tab);
@@ -678,6 +679,7 @@ private:
             }
             if (contourIntervalCombo_) contourIntervalCombo_->setEnabled(true);
             if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
+            if (pickLandmarkButton_) pickLandmarkButton_->setEnabled(true);
             refreshMapViews();
             statusBar()->showMessage(bspvision::uiText("Loaded BSP: %1", "Загружена карта BSP: %1")
                 .arg(QFileInfo(path).fileName()));
