@@ -662,7 +662,11 @@ private:
         if (bridgeSocket_ && bridgeSocket_->state() == QLocalSocket::ConnectedState
             && QDateTime::currentMSecsSinceEpoch() - lastBridgeCommandMs_ >= 100) {
             lastBridgeCommandMs_ = QDateTime::currentMSecsSinceEpoch();
-            QJsonObject cmd{{"type","target"},{"enabled",enabled},{"yaw",yaw_ ? yaw_->value() : 0.0},{"pitch",pitch_ ? -pitch_->value() : 0.0}};
+            QJsonObject cmd;
+            cmd.insert(QStringLiteral("type"), QStringLiteral("target"));
+            cmd.insert(QStringLiteral("enabled"), enabled);
+            cmd.insert(QStringLiteral("yaw"), yaw_ ? yaw_->value() : 0.0);
+            cmd.insert(QStringLiteral("pitch"), pitch_ ? -pitch_->value() : 0.0);
             bridgeSocket_->write(QJsonDocument(cmd).toJson(QJsonDocument::Compact) + "\n");
             bridgeSocket_->flush();
         }
