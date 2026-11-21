@@ -151,7 +151,6 @@ private:
         const double speed = value(speed_, 1000.0), gravity = value(gravity_, 800.0);
         const double yaw = value(yaw_, 0.0), pitch = value(pitch_, 25.0), flight = value(flightTime_, 2.0);
         const double initialYaw = value(currentYawInit_, 0.0), initialPitch = value(currentPitchInit_, 0.0);
-        const double sensitivity = value(sensitivity_, 3.0), mYaw = value(mYaw_, 0.022), mPitch = value(mPitch_, 0.022);
         const double overlayFov = value(overlayFov_, 90.0);
         const int previousTab = tabs_ ? tabs_->currentIndex() : 0;
         const bool hadTrajectory = trajectoryCalculated_;
@@ -182,7 +181,6 @@ private:
         speed_->setValue(speed); gravity_->setValue(gravity);
         yaw_->setValue(yaw); pitch_->setValue(pitch); flightTime_->setValue(flight);
         currentYawInit_->setValue(initialYaw); currentPitchInit_->setValue(initialPitch);
-        sensitivity_->setValue(sensitivity); mYaw_->setValue(mYaw); mPitch_->setValue(mPitch);
         overlayFov_->setValue(overlayFov);
 
         updateSettingsMenuText();
@@ -394,52 +392,24 @@ private:
             "Native SBGL Bridge · in-game HUD", "Нативный SBGL Bridge · игровой HUD"), tab);
         auto *liveLayout = new QVBoxLayout(liveGroup);
         currentYawInit_ = makeCoordinate(0.0, liveGroup);
-        currentYawInit_->setRange(-180.0, 180.0);
-        currentYawInit_->setSingleStep(5.0);
         currentPitchInit_ = makeCoordinate(0.0, liveGroup);
-        currentPitchInit_->setRange(-89.0, 89.0);
-        currentPitchInit_->setSingleStep(2.0);
-        sensitivity_ = makeCoordinate(3.0, liveGroup);
-        sensitivity_->setRange(0.01, 50.0);
-        sensitivity_->setSingleStep(0.25);
-        auto makeFineField = [liveGroup](double value) {
-            auto *field = new QDoubleSpinBox(liveGroup);
-            field->setRange(-1.0, 1.0);
-            field->setDecimals(4);
-            field->setSingleStep(0.001);
-            field->setValue(value);
-            field->setMinimumWidth(88);
-            return field;
-        };
-        mYaw_ = makeFineField(0.022);
-        mPitch_ = makeFineField(0.022);
+        currentYawInit_->hide();
+        currentPitchInit_->hide();
         overlayFov_ = makeCoordinate(90.0, liveGroup);
         overlayFov_->setRange(30.0, 140.0);
         overlayFov_->setSingleStep(5.0);
-
-        auto *calibrationRow1 = new QHBoxLayout();
-        auto *calibrationRow2 = new QHBoxLayout();
-        auto addCalibrationField = [liveGroup](QHBoxLayout *row, const QString &label, QDoubleSpinBox *field) {
-            row->addWidget(new QLabel(label, liveGroup));
-            row->addWidget(field);
-        };
-        addCalibrationField(calibrationRow1, bspvision::uiText("Initial yaw °", "Начальный yaw °"), currentYawInit_);
-        addCalibrationField(calibrationRow1, bspvision::uiText("Initial pitch °", "Начальный pitch °"), currentPitchInit_);
-        addCalibrationField(calibrationRow1, bspvision::uiText("Sensitivity", "Чувствительность"), sensitivity_);
-        calibrationRow1->addStretch();
-        addCalibrationField(calibrationRow2, QStringLiteral("m_yaw"), mYaw_);
-        addCalibrationField(calibrationRow2, QStringLiteral("m_pitch"), mPitch_);
-        addCalibrationField(calibrationRow2, bspvision::uiText("Horizontal FOV °", "Горизонтальный FOV °"), overlayFov_);
-        auto *startOverlay = new QPushButton(bspvision::uiText("Start overlay", "Запустить оверлей"), liveGroup);
-        auto *stopOverlay = new QPushButton(bspvision::uiText("Stop overlay", "Остановить оверлей"), liveGroup);
-        calibrationRow2->addWidget(startOverlay);
-        calibrationRow2->addWidget(stopOverlay);
-        liveLayout->addLayout(calibrationRow1);
-        liveLayout->addLayout(calibrationRow2);
-
+        auto *fovRow = new QHBoxLayout();
+        fovRow->addWidget(new QLabel(bspvision::uiText("Horizontal FOV °", "Горизонтальный FOV °"), liveGroup));
+        fovRow->addWidget(overlayFov_);
+        auto *startOverlay = new QPushButton(bspvision::uiText("Connect / show overlay", "Подключить / показать оверлей"), liveGroup);
+        auto *stopOverlay = new QPushButton(bspvision::uiText("Hide overlay", "Скрыть оверлей"), liveGroup);
+        fovRow->addWidget(startOverlay);
+        fovRow->addWidget(stopOverlay);
+        fovRow->addStretch();
+        liveLayout->addLayout(fovRow);
         liveStatusLabel_ = new QLabel(bspvision::uiText(
-            "Install the SBGL Lua adapter and native module in GMod. The bridge connects automatically when both apps are running.",
-            "Установите Lua-адаптер SBGL и нативный модуль в GMod. Мост подключится автоматически, когда обе программы запущены."), liveGroup);
+            "Waiting for the native bridge. Install the binary module and Lua adapter, then restart GMod.",
+            "Ожидаем нативный мост. Установите бинарный модуль и Lua-адаптер, затем перезапустите GMod."), liveGroup);
         liveStatusLabel_->setWordWrap(true);
         liveLayout->addWidget(liveStatusLabel_);
         liveTelemetryLabel_ = new QLabel(liveGroup);
@@ -755,7 +725,7 @@ private:
     QDoubleSpinBox *speed_ = nullptr, *gravity_ = nullptr, *yaw_ = nullptr, *pitch_ = nullptr, *flightTime_ = nullptr;
     QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
     QDoubleSpinBox *currentYawInit_ = nullptr, *currentPitchInit_ = nullptr;
-    QDoubleSpinBox *sensitivity_ = nullptr, *mYaw_ = nullptr, *mPitch_ = nullptr, *overlayFov_ = nullptr;
+    QDoubleSpinBox *overlayFov_ = nullptr;
     QTimer *overlayTimer_ = nullptr;
     bspvision::LiveOverlay *overlay_ = nullptr;
     QLocalServer *bridgeServer_ = nullptr;
