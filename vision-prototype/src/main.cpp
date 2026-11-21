@@ -5,6 +5,7 @@
 #include "ballistics_view.hpp"
 #include "live_overlay.hpp"
 #include "cl_showpos_reader.hpp"
+#include "heightfield.hpp"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -37,6 +38,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -169,6 +171,7 @@ private:
         screenCaptureX_ = screenCaptureY_ = screenCaptureWidth_ = screenCaptureHeight_ = nullptr;
         useScreenPositionButton_ = nullptr;
         showSkyboxCheck_ = nullptr;
+        heightfieldCheck_ = nullptr;
         currentYawInit_ = currentPitchInit_ = overlayFov_ = nullptr;
         originX_ = originY_ = originZ_ = nullptr;
         targetX_ = targetY_ = targetZ_ = nullptr;
@@ -198,11 +201,16 @@ private:
         if (!bspFile_.isLoaded() || !mapView_ || !meshView_ || !ballisticsView_) return;
         const QVector<bspvision::BspPolygon> polygons = bspFile_.facePolygons(showSkybox_);
         mapView_->setMap(bspFile_.vertices(), polygons);
+        if (heightfield_.isValid()) {
+            mapView_->setHeightfield(heightfield_.hillshadeImage(), heightfield_.worldBounds());
+            mapView_->setHeightfieldVisible(heightfieldVisible_);
+        }
         meshView_->setMap(bspFile_.vertices(), polygons);
         ballisticsView_->setMap(bspFile_.vertices(), polygons);
         bspSummary_->setText(bspFile_.summary());
         populateLumpTable();
         if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
+        if (heightfieldCheck_) heightfieldCheck_->setEnabled(true);
         coordinateLabel_->setText(bspvision::uiText(
             "Click the map preview to inspect XY coordinates. Z is ambiguous because maps can contain multiple floors. Sky-textured faces are hidden by default.",
             "Нажмите на карту, чтобы выбрать X/Y. Координата Z неоднозначна из-за нескольких этажей. Поверхности с sky-материалами скрыты по умолчанию."));
@@ -279,6 +287,44 @@ private:
         return names.value(name, name);
     }
 
+    void setHeightfieldVisible(bool visible) {
+        if (!visible) {
+            heightfieldVisible_ = false;
+            if (mapView_) mapView_->setHeightfieldVisible(false);
+            return;
+        }
+        if (!bspFile_.isLoaded()) return;
+
+        if (!heightfield_.isValid()) {
+            statusBar()->showMessage(bspvision::uiText(
+                "Building heightfield and hillshade…", "Строю heightfield и hillshade…"));
+            QApplication::processEvents();
+            QString error;
+            const auto polygons = bspFile_.facePolygons(false);
+            if (!heightfield_.build(polygons, 16.0, 2048, &error)) {
+                heightfieldVisible_ = false;
+                if (heightfieldCheck_) {
+                    const QSignalBlocker blocker(heightfieldCheck_);
+                    heightfieldCheck_->setChecked(false);
+                }
+                QMessageBox::warning(this, bspvision::uiText(
+                    "Heightfield build failed", "Не удалось построить heightfield"), error);
+                return;
+            }
+        }
+
+        heightfieldVisible_ = true;
+        if (mapView_) {
+            mapView_->setHeightfield(heightfield_.hillshadeImage(), heightfield_.worldBounds());
+            mapView_->setHeightfieldVisible(true);
+        }
+        statusBar()->showMessage(bspvision::uiText(
+            "Heightfield ready: %1×%2 cells, %3 covered, cell %4 units.",
+            "Heightfield готов: %1×%2 ячеек, покрыто %3, размер ячейки %4 ед.")
+            .arg(heightfield_.width()).arg(heightfield_.height())
+            .arg(heightfield_.coveredCellCount()).arg(heightfield_.cellSize(), 0, 'f', 2));
+    }
+
     void buildBspTab(QTabWidget *tabs) {
         auto *tab = new QWidget(tabs);
         auto *layout = new QVBoxLayout(tab);
@@ -289,11 +335,20 @@ private:
         showSkyboxCheck_->setChecked(showSkybox_);
         showSkyboxCheck_->setEnabled(bspFile_.isLoaded());
         controls->addWidget(showSkyboxCheck_);
+
+        heightfieldCheck_ = new QCheckBox(
+            bspvision::uiText("Hillshade heightfield", "Рельеф: heightfield / hillshade"), tab);
+        heightfieldCheck_->setChecked(heightfieldVisible_);
+        heightfieldCheck_->setEnabled(bspFile_.isLoaded());
+        controls->addWidget(heightfieldCheck_);
         controls->addStretch();
         layout->addLayout(controls);
         connect(showSkyboxCheck_, &QCheckBox::toggled, this, [this](bool checked) {
             showSkybox_ = checked;
             if (bspFile_.isLoaded()) refreshMapViews();
+        });
+        connect(heightfieldCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+            setHeightfieldVisible(checked);
         });
 
         bspSummary_ = new QLabel(bspvision::uiText(
@@ -346,6 +401,13 @@ private:
                 return;
             }
             loadedMapName_ = QFileInfo(path).completeBaseName();
+            heightfield_.clear();
+            heightfieldVisible_ = false;
+            if (heightfieldCheck_) {
+                const QSignalBlocker blocker(heightfieldCheck_);
+                heightfieldCheck_->setChecked(false);
+                heightfieldCheck_->setEnabled(true);
+            }
             if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
             refreshMapViews();
             statusBar()->showMessage(bspvision::uiText("Loaded BSP: %1", "Загружена карта BSP: %1")
@@ -884,7 +946,9 @@ private:
     QAction *englishAction_ = nullptr;
     QAction *russianAction_ = nullptr;
     QCheckBox *showSkyboxCheck_ = nullptr;
+    QCheckBox *heightfieldCheck_ = nullptr;
     bool showSkybox_ = false;
+    bool heightfieldVisible_ = false;
     bool trajectoryCalculated_ = false;
 
     QLabel *bspSummary_ = nullptr;
@@ -908,6 +972,7 @@ private:
     QTimer *overlayTimer_ = nullptr;
     QTimer *screenCaptureTimer_ = nullptr;
     bspvision::ClShowPosReader screenReader_;
+    bspvision::Heightfield heightfield_;
     bspvision::LiveOverlay *overlay_ = nullptr;
     QLocalServer *bridgeServer_ = nullptr;
     QLocalSocket *bridgeSocket_ = nullptr;
