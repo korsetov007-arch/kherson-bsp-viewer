@@ -1194,6 +1194,16 @@ private:
             !targetDefined_ || autoSolveInProgress_) return;
         autoSolveInProgress_ = true;
         calculateArc(true, false);
+        if (trajectoryCalculated_ && lastTrajectoryBlocked_) {
+            // Prefer the minimum-time low arc, but fall back to the high arc
+            // when BSP geometry blocks it and the high arc remains clear.
+            calculateArc(true, true);
+            if (trajectoryCalculated_ && !lastTrajectoryBlocked_ && ballisticsSummary_) {
+                ballisticsSummary_->setText(ballisticsSummary_->text() +
+                    bspvision::uiText(" Low arc was blocked; switched to the clear high arc.",
+                                      " Низкая дуга перекрыта; выбрана свободная высокая дуга."));
+            }
+        }
         autoSolveInProgress_ = false;
     }
 
@@ -1205,6 +1215,7 @@ private:
         double pitch = qDegreesToRadians(pitch_->value());
         double duration = flightTime_->value();
         trajectoryCalculated_ = false;
+        lastTrajectoryBlocked_ = false;
         if (ballisticsView_) ballisticsView_->clearTrajectory();
         syncOverlay();
         targetDefined_ = targetDefined_ || solveTarget;
@@ -1313,6 +1324,7 @@ private:
             }
         }
 
+        lastTrajectoryBlocked_ = collisionBlocked;
         const QVector3D origin(static_cast<float>(ox), static_cast<float>(oy), static_cast<float>(oz));
         const QVector3D target(static_cast<float>(tx), static_cast<float>(ty), static_cast<float>(tz));
         ballisticsView_->setTrajectory(points, origin, target, targetDefined_);
@@ -1479,6 +1491,7 @@ private:
     QDoubleSpinBox *speed_ = nullptr, *gravity_ = nullptr, *yaw_ = nullptr, *pitch_ = nullptr, *flightTime_ = nullptr;
     QCheckBox *autoSolveTargetCheck_ = nullptr;
     bool autoSolveInProgress_ = false;
+    bool lastTrajectoryBlocked_ = false;
     QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
     QLabel *screenReaderStatusLabel_ = nullptr;
     QLabel *cropRegionLabel_ = nullptr;
