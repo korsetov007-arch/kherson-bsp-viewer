@@ -51,6 +51,17 @@ void BspMapView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPol
     update();
 }
 
+void BspMapView::setHeightfield(const QImage &hillshade, const QRectF &worldBounds) {
+    heightfieldImage_ = hillshade;
+    heightfieldWorldBounds_ = worldBounds;
+    update();
+}
+
+void BspMapView::setHeightfieldVisible(bool visible) {
+    heightfieldVisible_ = visible && !heightfieldImage_.isNull();
+    update();
+}
+
 void BspMapView::clearMap() {
     vertices_.clear();
     polygons_.clear();
@@ -94,6 +105,17 @@ void BspMapView::paintEvent(QPaintEvent *event) {
     painter.fillRect(rect(), QColor(26, 30, 36));
 
     const QRectF plot = plotRect();
+    if (heightfieldVisible_ && !heightfieldImage_.isNull()) {
+        const QPointF worldTopLeft = worldToScreen(
+            heightfieldWorldBounds_.left(),
+            heightfieldWorldBounds_.top() + heightfieldWorldBounds_.height());
+        const QPointF worldBottomRight = worldToScreen(
+            heightfieldWorldBounds_.left() + heightfieldWorldBounds_.width(),
+            heightfieldWorldBounds_.top());
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        painter.drawImage(QRectF(worldTopLeft, worldBottomRight).normalized(), heightfieldImage_);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    }
     painter.setPen(QPen(QColor(48, 55, 64), 1.0));
     for (int i = 1; i < 10; ++i) {
         const qreal x = plot.left() + plot.width() * i / 10.0;
@@ -124,8 +146,13 @@ void BspMapView::paintEvent(QPaintEvent *event) {
         zAverage /= polygon.vertices.size();
         const double level = std::clamp((zAverage - minZ_) / zSpan, 0.0, 1.0);
         const int tint = static_cast<int>(level * 48.0);
-        painter.setPen(QPen(QColor(69 + tint, 83 + tint, 99 + tint), 0.6));
-        painter.setBrush(QColor(52 + tint, 66 + tint, 81 + tint));
+        if (heightfieldVisible_) {
+            painter.setPen(QPen(QColor(24, 30, 36, 150), 0.45));
+            painter.setBrush(Qt::NoBrush);
+        } else {
+            painter.setPen(QPen(QColor(69 + tint, 83 + tint, 99 + tint), 0.6));
+            painter.setBrush(QColor(52 + tint, 66 + tint, 81 + tint));
+        }
         painter.drawPolygon(screenPolygon);
     }
 
@@ -140,8 +167,14 @@ void BspMapView::paintEvent(QPaintEvent *event) {
 
     painter.setPen(QColor(211, 216, 224));
     painter.drawText(QRectF(12, 4, width() - 24, 18), Qt::AlignLeft | Qt::AlignVCenter,
-                     uiText("Top-down XY view • faces: %1 • Z range: %2 to %3", "Вид сверху XY • граней: %1 • диапазон Z: %2 - %3")
-                         .arg(polygons_.size()).arg(minZ_, 0, 'f', 1).arg(maxZ_, 0, 'f', 1));
+                     heightfieldVisible_
+                         ? uiText("Hillshade heightfield %1×%2 • cell %3 u • ground/canopy layers",
+                                  "Рельеф hillshade %1×%2 • ячейка %3 ед. • слои ground/canopy")
+                               .arg(heightfieldImage_.width()).arg(heightfieldImage_.height())
+                               .arg(heightfieldWorldBounds_.width() / std::max(1, heightfieldImage_.width()), 0, 'f', 1)
+                         : uiText("Top-down XY view • faces: %1 • Z range: %2 to %3",
+                                  "Вид сверху XY • граней: %1 • диапазон Z: %2 - %3")
+                               .arg(polygons_.size()).arg(minZ_, 0, 'f', 1).arg(maxZ_, 0, 'f', 1));
 }
 
 void BspMapView::mousePressEvent(QMouseEvent *event) {
