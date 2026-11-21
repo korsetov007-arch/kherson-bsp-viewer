@@ -16,6 +16,7 @@
 #include <QMenuBar>
 #include <QSettings>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QClipboard>
 #include <QFileDialog>
 #include <QGuiApplication>
@@ -562,6 +563,8 @@ private:
         double yaw = qDegreesToRadians(yaw_->value());
         double pitch = qDegreesToRadians(pitch_->value());
         double duration = flightTime_->value();
+        trajectoryCalculated_ = false;
+        syncOverlay();
         targetDefined_ = targetDefined_ || solveTarget;
 
         if (solveTarget) {
