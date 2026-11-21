@@ -301,13 +301,13 @@ QString BspFile::summary() const {
     if (!loaded_) return uiText("No BSP loaded.", "BSP-карта не загружена.");
     const int validPolygons = facePolygons().size();
     return uiText(
-        "File: %1\\n"
-        "Format: Source BSP v%2 | Size: %3 MiB\\n"
-        "Vertices: %4 | Edges: %5 | Surf edges: %6\\n"
+        "File: %1\n"
+        "Format: Source BSP v%2 | Size: %3 MiB\n"
+        "Vertices: %4 | Edges: %5 | Surf edges: %6\n"
         "Faces in lump: %7 | Visible outlines (sky surfaces hidden): %8 | Sky-textured faces: %9",
-        "Файл: %1\\n"
-        "Формат: Source BSP v%2 | Размер: %3 МиБ\\n"
-        "Вершины: %4 | Рёбра: %5 | Направленные рёбра: %6\\n"
+        "Файл: %1\n"
+        "Формат: Source BSP v%2 | Размер: %3 МиБ\n"
+        "Вершины: %4 | Рёбра: %5 | Направленные рёбра: %6\n"
         "Граней в lump: %7 | Видимых контуров (без скайбокса): %8 | Граней sky-материалов: %9")
         .arg(filePath_)
         .arg(version_)
