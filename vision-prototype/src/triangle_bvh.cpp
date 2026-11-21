@@ -187,7 +187,9 @@ bool TriangleBvh::intersectTriangle(const Triangle &triangle, const Vec3d &start
     if (v < -kBarycentricEpsilon || u + v > 1.0 + kBarycentricEpsilon) return false;
 
     const double t = dot(edge2, q) * invDeterminant;
-    if (t < -kBarycentricEpsilon || t > 1.0 + kBarycentricEpsilon || !std::isfinite(t))
+    // Ignore a hit exactly at the segment origin. Launch points often sit on a
+    // floor surface; treating t=0 as a new collision would truncate every arc.
+    if (t <= 1e-5 || t > 1.0 + kBarycentricEpsilon || !std::isfinite(t))
         return false;
 
     if (fraction) *fraction = std::clamp(t, 0.0, 1.0);
