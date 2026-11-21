@@ -8,7 +8,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 include(CTest)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network)
 
 qt_add_executable(bsp-geometry
     src/main.cpp
@@ -17,18 +17,16 @@ qt_add_executable(bsp-geometry
     src/bsp_3d_view.cpp
     src/ballistics_view.cpp
     src/live_overlay.cpp
-    src/raw_mouse_tracker.cpp
     include/app_language.hpp
     include/bsp_file.hpp
     include/bsp_map_view.hpp
     include/bsp_3d_view.hpp
     include/ballistics_view.hpp
     include/live_overlay.hpp
-    include/raw_mouse_tracker.hpp
 )
 
 target_include_directories(bsp-geometry PRIVATE include)
-target_link_libraries(bsp-geometry PRIVATE Qt6::Widgets)
+target_link_libraries(bsp-geometry PRIVATE Qt6::Widgets Qt6::Network)
 if(WIN32)
     target_link_libraries(bsp-geometry PRIVATE user32)
 endif()
