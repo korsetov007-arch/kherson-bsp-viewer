@@ -133,7 +133,7 @@ This is an experimental implementation. Recognition can vary with font rasteriza
 3. Укажите высоту объекта в поле Z. При работающем cl_showpos поле автоматически подставляет текущую высоту камеры как начальное значение; для точной привязки скорректируйте её вручную.
 4. Включите экранное чтение cl_showpos и задайте область со строками pos:/ang: (если ещё не настроено). Нажмите F7 — приложение покажет круг поверх игры. Повторное F7 скроет его.
 5. Круг пересчитывается из мировой координаты ориентира и текущих pos/ang. Он жёлтый, пока прицел находится вне круга, и становится зелёным, когда центр экрана попадает в радиус круга. Радиус наведения — 22 экранных пикселя.
-6. Горизонтальный FOV в настройках оверлея должен совпадать с FOV игры. Оверлей рассчитан на полноэкранный/безрамочный режим; в обычном оконном режиме центр всего монитора может не совпадать с центром игрового viewport.
+6. Горизонтальный FOV в настройках оверлея должен совпадать с FOV игры. Координаты ориентира автоматически сохраняются отдельно для каждого BSP-файла. Оверлей рассчитан на полноэкранный/безрамочный режим; в обычном оконном режиме центр всего монитора может не совпадать с центром игрового viewport.
 
 F7 регистрируется как глобальная клавиша Windows. Если её уже заняло другое приложение, F7 будет работать, когда окно Geometry Lab активно; приложение показывает предупреждение в строке состояния.
 
@@ -143,7 +143,7 @@ F7 регистрируется как глобальная клавиша Windo
 3. Set the object's height in the Landmark Z field. When cl_showpos is already running, the current camera height is prefilled; adjust it manually for an exact match.
 4. Enable the cl_showpos screen reader and select the pos:/ang: crop if it is not configured. Press F7 to show the circle over the game; press F7 again to hide it.
 5. The circle is projected from the landmark's Source-world position and live pos/ang. It stays yellow while the crosshair is outside and turns green when the screen center enters its radius. The aim radius is 22 screen pixels.
-6. The overlay's horizontal FOV must match the game's FOV. The overlay is intended for fullscreen/borderless mode; in a normal window the monitor center may differ from the game viewport center.
+6. The overlay's horizontal FOV must match the game's FOV. Landmark coordinates are saved separately for each BSP file. The overlay is intended for fullscreen/borderless mode; in a normal window the monitor center may differ from the game viewport center.
 
 F7 is registered as a global Windows hotkey. If another application already owns it, F7 works while the Geometry Lab window is focused; a status-bar warning is shown.
 
