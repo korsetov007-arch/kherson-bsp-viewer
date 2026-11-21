@@ -685,8 +685,8 @@ private:
         fovRow->addStretch();
         liveLayout->addLayout(fovRow);
         liveStatusLabel_ = new QLabel(bspvision::uiText(
-            "Overlay angles are supplied only by the cl_showpos screen reader below. Select the visible text area with the mouse.",
-            "Углы для оверлея берутся только из экранного чтения cl_showpos ниже. Выделите мышью область с текстом."), liveGroup);
+            "F7 enables closed-loop ballistic auto aim in the foreground Garry's Mod window. It calibrates mouse-to-angle response from cl_showpos; F7 again immediately restores manual control.",
+            "F7 включает автодоводку по рассчитанной траектории в активном окне Garry's Mod. Программа калибрует связь мыши с углами по cl_showpos; повторное F7 возвращает ручное управление."), liveGroup);
         liveStatusLabel_->setWordWrap(true);
         liveLayout->addWidget(liveStatusLabel_);
         liveTelemetryLabel_ = new QLabel(liveGroup);
@@ -908,6 +908,9 @@ private:
         connect(solveLow, &QPushButton::clicked, this, [this] { calculateArc(true, false); });
         connect(solveHigh, &QPushButton::clicked, this, [this] { calculateArc(true, true); });
         connect(clear, &QPushButton::clicked, this, [this] {
+            autoAimEnabled_ = false;
+            autoAimStage_ = AutoAimStage::Disabled;
+            autoAimStatus_ = bspvision::uiText("Auto aim stopped: target cleared.", "Автодоводка остановлена: цель удалена.");
             ballisticsView_->clearTrajectory();
             trajectoryCalculated_ = false;
             targetDefined_ = false;
@@ -918,6 +921,9 @@ private:
 
         auto invalidateSolution = [this] {
             if (autoSolveInProgress_) return;
+            autoAimEnabled_ = false;
+            autoAimStage_ = AutoAimStage::Disabled;
+            autoAimStatus_ = bspvision::uiText("Auto aim stopped: ballistic solution changed.", "Автодоводка остановлена: баллистическое решение изменилось.");
             trajectoryCalculated_ = false;
             if (ballisticsView_) ballisticsView_->clearTrajectory();
             if (ballisticsSummary_) {
@@ -973,6 +979,9 @@ private:
                 bspvision::uiText("No display is available for selection.", "Нет доступного экрана для выделения."));
             return;
         }
+        autoAimEnabled_ = false;
+        autoAimStage_ = AutoAimStage::Disabled;
+        autoAimStatus_ = bspvision::uiText("Auto aim stopped: telemetry crop is being changed.", "Автодоводка остановлена: меняется область телеметрии.");
         if (screenCaptureTimer_) screenCaptureTimer_->stop();
         screenReader_.stop();
 
@@ -1100,6 +1109,11 @@ private:
         const double ox = originX_->value(), oy = originY_->value(), oz = originZ_->value();
         const double tx = targetX_->value(), ty = targetY_->value(), tz = targetZ_->value();
         const double speed = speed_->value(), g = gravity_->value();
+        if (autoAimEnabled_) {
+            autoAimEnabled_ = false;
+            autoAimStage_ = AutoAimStage::Disabled;
+            autoAimStatus_ = bspvision::uiText("Auto aim stopped: recalculating trajectory.", "Автодоводка остановлена: пересчёт траектории.");
+        }
         double yaw = qDegreesToRadians(yaw_->value());
         double pitch = qDegreesToRadians(pitch_->value());
         double duration = flightTime_->value();
