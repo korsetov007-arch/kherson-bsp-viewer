@@ -48,6 +48,13 @@
 #include <QHBoxLayout>
 #include <QWidget>
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -219,10 +226,50 @@ public:
         overlayTimer_ = new QTimer(this);
         connect(overlayTimer_, &QTimer::timeout, this, [this] { syncOverlay(); });
         overlayTimer_->start(16);
+#ifdef Q_OS_WIN
+        hotkeyRegistered_ = RegisterHotKey(
+            reinterpret_cast<HWND>(winId()), LandmarkHotkeyId, MOD_NOREPEAT, VK_F7) != FALSE;
+        if (!hotkeyRegistered_) {
+            statusBar()->showMessage(bspvision::uiText(
+                "Could not register global F7 (another app may own it); F7 works while this window is focused.",
+                "Не удалось зарегистрировать глобальную F7 (клавиша занята); F7 будет работать, когда активно это окно."));
+        }
+#endif
+    }
+
+#if defined(Q_OS_WIN)
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override {
+        MSG *msg = static_cast<MSG *>(message);
+        if (msg && msg->message == WM_HOTKEY &&
+            msg->wParam == static_cast<WPARAM>(LandmarkHotkeyId)) {
+            toggleLandmarkTracking();
+            if (result) *result = 0;
+            return true;
+        }
+        return QMainWindow::nativeEvent(eventType, message, result);
+    }
+#endif
+
+protected:
+    void keyPressEvent(QKeyEvent *event) override {
+        if (event->key() == Qt::Key_F7 && !event->isAutoRepeat()) {
+#if defined(Q_OS_WIN)
+            if (!hotkeyRegistered_) toggleLandmarkTracking();
+#else
+            toggleLandmarkTracking();
+#endif
+            event->accept();
+            return;
+        }
+        QMainWindow::keyPressEvent(event);
     }
 
 public:
     ~MainWindow() override {
+#ifdef Q_OS_WIN
+        if (hotkeyRegistered_)
+            UnregisterHotKey(reinterpret_cast<HWND>(winId()), LandmarkHotkeyId);
+#endif
         if (overlay_) {
             overlay_->close();
             delete overlay_;
@@ -298,6 +345,9 @@ private:
         liveTelemetryLabel_ = nullptr;
         screenReaderStatusLabel_ = nullptr;
         cropRegionLabel_ = nullptr;
+        landmarkStatusLabel_ = nullptr;
+        landmarkZ_ = nullptr;
+        pickLandmarkButton_ = nullptr;
         screenReaderEnabledCheck_ = nullptr;
         screenCaptureX_ = screenCaptureY_ = screenCaptureWidth_ = screenCaptureHeight_ = nullptr;
         useScreenPositionButton_ = nullptr;
@@ -333,6 +383,7 @@ private:
         if (!bspFile_.isLoaded() || !mapView_ || !meshView_ || !ballisticsView_) return;
         const QVector<bspvision::BspPolygon> polygons = bspFile_.facePolygons(showSkybox_);
         mapView_->setMap(bspFile_.vertices(), polygons);
+        mapView_->setWorldLandmark(landmarkPosition_.x(), landmarkPosition_.y(), hasLandmark_);
         if (heightfield_.isValid()) {
             mapView_->setHeightfield(heightfield_.hillshadeImage(), heightfield_.worldBounds());
             mapView_->setHeightfieldContours(heightfieldContourInterval_ == 256
@@ -493,6 +544,17 @@ private:
         contourIntervalCombo_->setToolTip(bspvision::uiText(
             "Contour interval in Source world units.", "Шаг изолиний в единицах мира Source."));
         controls->addWidget(contourIntervalCombo_);
+
+        controls->addWidget(new QLabel(bspvision::uiText("Landmark Z", "Высота Z"), tab));
+        landmarkZ_ = makeCoordinate(hasLandmark_ ? landmarkPosition_.z() : 0.0, tab);
+        landmarkZ_->setMaximumWidth(92);
+        controls->addWidget(landmarkZ_);
+        pickLandmarkButton_ = new QPushButton(
+            bspvision::uiText("Pick aiming circle…", "Задать круг-ориентир…"), tab);
+        controls->addWidget(pickLandmarkButton_);
+        auto *clearLandmark = new QPushButton(
+            bspvision::uiText("Clear", "Убрать"), tab);
+        controls->addWidget(clearLandmark);
         controls->addStretch();
         layout->addLayout(controls);
         connect(showSkyboxCheck_, &QCheckBox::toggled, this, [this](bool checked) {
@@ -510,6 +572,31 @@ private:
                 mapView_->setHeightfieldContours(heightfieldContourInterval_ == 256
                     ? heightfield_.contours256() : heightfield_.contours128());
             }
+        });
+        connect(pickLandmarkButton_, &QPushButton::clicked, this, [this] {
+            if (!bspFile_.isLoaded()) return;
+            landmarkPickMode_ = true;
+            statusBar()->showMessage(bspvision::uiText(
+                "Click the landmark location on the top-down BSP map. Set its Z height in the Landmark Z field.",
+                "Щёлкните по месту ориентира на карте BSP сверху. Высоту задайте в поле «Высота Z»."));
+        });
+        connect(clearLandmark, &QPushButton::clicked, this, [this] {
+            hasLandmark_ = false;
+            landmarkTrackingEnabled_ = false;
+            landmarkPickMode_ = false;
+            landmarkPosition_ = QVector3D();
+            if (mapView_) mapView_->setWorldLandmark(0.0, 0.0, false);
+            syncOverlay();
+            if (landmarkStatusLabel_) landmarkStatusLabel_->setText(
+                bspvision::uiText("No aiming landmark set. Pick a point on the BSP map.", "Круг-ориентир не задан. Выберите точку на карте BSP."));
+            statusBar()->showMessage(bspvision::uiText("Aiming landmark cleared.", "Круг-ориентир удалён."));
+        });
+        connect(landmarkZ_, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                this, [this](double z) {
+            if (!hasLandmark_) return;
+            landmarkPosition_.setZ(static_cast<float>(z));
+            if (mapView_) mapView_->setWorldLandmark(landmarkPosition_.x(), landmarkPosition_.y(), true);
+            syncOverlay();
         });
 
         bspSummary_ = new QLabel(bspvision::uiText(
@@ -548,6 +635,17 @@ private:
             tab);
         coordinateLabel_->setWordWrap(true);
         layout->addWidget(coordinateLabel_);
+        landmarkStatusLabel_ = new QLabel(tab);
+        landmarkStatusLabel_->setWordWrap(true);
+        landmarkStatusLabel_->setText(hasLandmark_
+            ? bspvision::uiText("Aiming landmark at X=%1, Y=%2, Z=%3. Press F7 to show/hide the live circle.",
+                                "Круг-ориентир: X=%1, Y=%2, Z=%3. F7 — показать/скрыть круг.")
+                  .arg(landmarkPosition_.x(), 0, 'f', 1)
+                  .arg(landmarkPosition_.y(), 0, 'f', 1)
+                  .arg(landmarkPosition_.z(), 0, 'f', 1)
+            : bspvision::uiText("Pick a point on the map to place one aiming circle. F7 toggles it in-game.",
+                                "Выберите точку на карте, чтобы задать один круг-ориентир. F7 включает его в игре."));
+        layout->addWidget(landmarkStatusLabel_);
         tabs->addTab(tab, bspvision::uiText("BSP geometry", "Геометрия BSP"));
 
         connect(loadBsp, &QPushButton::clicked, this, [this] {
@@ -562,6 +660,11 @@ private:
                 return;
             }
             loadedMapName_ = QFileInfo(path).completeBaseName();
+            hasLandmark_ = false;
+            landmarkTrackingEnabled_ = false;
+            landmarkPickMode_ = false;
+            landmarkPosition_ = QVector3D();
+            if (landmarkZ_) landmarkZ_->setValue(0.0);
             heightfield_.clear();
             heightfieldVisible_ = false;
             collisionBvh_.clear();
@@ -581,6 +684,29 @@ private:
         });
 
         mapView_->pointSelected = [this](double x, double y) {
+            if (landmarkPickMode_) {
+                landmarkPickMode_ = false;
+                bspvision::ClShowPosSample liveSample;
+                if (landmarkZ_ && screenReader_.latestSample(&liveSample))
+                    landmarkZ_->setValue(liveSample.position.z());
+                const double z = landmarkZ_ ? landmarkZ_->value() : 0.0;
+                landmarkPosition_ = QVector3D(static_cast<float>(x), static_cast<float>(y),
+                                               static_cast<float>(z));
+                hasLandmark_ = true;
+                if (mapView_) mapView_->setWorldLandmark(x, y, true);
+                if (landmarkStatusLabel_) landmarkStatusLabel_->setText(
+                    bspvision::uiText("Aiming landmark: X=%1, Y=%2, Z=%3. Press F7 to show/hide the live circle.",
+                                      "Круг-ориентир: X=%1, Y=%2, Z=%3. F7 — показать/скрыть круг.")
+                        .arg(x, 0, 'f', 1).arg(y, 0, 'f', 1).arg(z, 0, 'f', 1));
+                coordinateLabel_->setText(bspvision::uiText(
+                    "Aiming landmark set. Adjust Landmark Z for the selected floor, then press F7 in-game.",
+                    "Ориентир установлен. При необходимости скорректируйте высоту Z, затем нажмите F7 в игре."));
+                syncOverlay();
+                statusBar()->showMessage(bspvision::uiText(
+                    "Landmark saved. Press F7 to toggle the moving on-screen aiming circle.",
+                    "Ориентир задан. Нажмите F7, чтобы включить/выключить движущийся экранный круг."));
+                return;
+            }
             coordinateLabel_->setText(bspvision::uiText(
                 "Selected top-down coordinate: X = %1, Y = %2. Set Z manually for the correct floor.",
                 "Выбраны координаты сверху: X = %1, Y = %2. Укажите Z вручную для нужного этажа.")
@@ -1115,6 +1241,31 @@ private:
         syncOverlay();
     }
 
+    void toggleLandmarkTracking() {
+        if (!hasLandmark_) {
+            statusBar()->showMessage(bspvision::uiText(
+                "Set an aiming landmark first: BSP geometry → Pick aiming circle…",
+                "Сначала задайте ориентир: Геометрия BSP → «Задать круг-ориентир…»."));
+            return;
+        }
+        landmarkTrackingEnabled_ = !landmarkTrackingEnabled_;
+        if (landmarkTrackingEnabled_) {
+            if (screenReaderEnabledCheck_ && !screenReaderEnabledCheck_->isChecked())
+                screenReaderEnabledCheck_->setChecked(true);
+            else if (!screenReader_.isRunning())
+                startClShowPosReader();
+            if (overlay_ && !overlay_->isVisible()) startExternalOverlay();
+        } else if (overlay_ && !(targetDefined_ && trajectoryCalculated_)) {
+            overlay_->hide();
+        }
+        syncOverlay();
+        statusBar()->showMessage(landmarkTrackingEnabled_
+            ? bspvision::uiText("Aiming circle ON. It turns green when the crosshair is inside it. F7 hides it.",
+                                "Круг наведения ВКЛ. Он зеленеет, когда прицел попадает внутрь. F7 — скрыть.")
+            : bspvision::uiText("Aiming circle OFF. Press F7 to show it again.",
+                                "Круг наведения ВЫКЛ. Нажмите F7, чтобы показать снова."));
+    }
+
     void startExternalOverlay() {
         QScreen *targetScreen = screen();
         if (!targetScreen) targetScreen = QGuiApplication::primaryScreen();
@@ -1139,6 +1290,14 @@ private:
         overlay_->setTargetDetails(range, flightTime_ ? flightTime_->value() : 0.0, loadedMapName_);
         const bool enabled = targetDefined_ && trajectoryCalculated_;
         overlay_->setTargetEnabled(enabled);
+        bspvision::ClShowPosSample landmarkSample;
+        const bool haveLandmarkSample = screenReader_.latestSample(&landmarkSample);
+        overlay_->setLandmark(
+            landmarkPosition_,
+            haveLandmarkSample ? landmarkSample.position : QVector3D(),
+            haveLandmarkSample ? landmarkSample.angles.y() : cy,
+            haveLandmarkSample ? landmarkSample.angles.x() : cp,
+            landmarkTrackingEnabled_ && hasLandmark_ && haveLandmarkSample);
 
         QString state;
         if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked()) {
@@ -1177,6 +1336,7 @@ private:
         }
     }
 
+    static constexpr int LandmarkHotkeyId = 0xB570;
     QTabWidget *tabs_ = nullptr;
     QMenu *settingsMenu_ = nullptr;
     QMenu *languageMenu_ = nullptr;
@@ -1203,6 +1363,9 @@ private:
     QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
     QLabel *screenReaderStatusLabel_ = nullptr;
     QLabel *cropRegionLabel_ = nullptr;
+    QLabel *landmarkStatusLabel_ = nullptr;
+    QDoubleSpinBox *landmarkZ_ = nullptr;
+    QPushButton *pickLandmarkButton_ = nullptr;
     QCheckBox *screenReaderEnabledCheck_ = nullptr;
     QSpinBox *screenCaptureX_ = nullptr, *screenCaptureY_ = nullptr;
     QSpinBox *screenCaptureWidth_ = nullptr, *screenCaptureHeight_ = nullptr;
@@ -1220,8 +1383,15 @@ private:
     QString collisionBvhError_;
     bspvision::LiveOverlay *overlay_ = nullptr;
     QString loadedMapName_;
+    QVector3D landmarkPosition_;
     int pickMode_ = 0;
     bool targetDefined_ = false;
+    bool hasLandmark_ = false;
+    bool landmarkTrackingEnabled_ = false;
+    bool landmarkPickMode_ = false;
+#if defined(Q_OS_WIN)
+    bool hotkeyRegistered_ = false;
+#endif
     bspvision::BspFile bspFile_;
 };
 
