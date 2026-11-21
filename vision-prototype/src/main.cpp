@@ -691,7 +691,7 @@ private:
         screenLayout->addWidget(useScreenPositionButton_);
         auto *screenNote = new QLabel(
             bspvision::uiText(
-                "Classic pixel-template matching; no OCR engine, neural network, Lua module or bridge is used. pos is Source MainViewOrigin and may differ from the weapon muzzle.",
+                "Classic pixel-template matching; no OCR engine, neural network or game module is used. pos is Source MainViewOrigin and may differ from the weapon muzzle.",
                 "Распознавание пиксельными шаблонами; OCR, нейросеть, Lua-модуль и мост не используются. pos — это MainViewOrigin Source, он может отличаться от дульного среза."), screenGroup);
         screenNote->setWordWrap(true);
         screenLayout->addWidget(screenNote);
