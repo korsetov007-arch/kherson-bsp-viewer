@@ -224,15 +224,18 @@ public:
         rebuildInterface();
         overlay_ = new bspvision::LiveOverlay();
         overlayTimer_ = new QTimer(this);
-        connect(overlayTimer_, &QTimer::timeout, this, [this] { syncOverlay(); });
+        connect(overlayTimer_, &QTimer::timeout, this, [this] {
+            pollF7Fallback();
+            syncOverlay();
+        });
         overlayTimer_->start(16);
 #ifdef Q_OS_WIN
         hotkeyRegistered_ = RegisterHotKey(
             reinterpret_cast<HWND>(winId()), AutoAimHotkeyId, MOD_NOREPEAT, VK_F7) != FALSE;
         if (!hotkeyRegistered_) {
             statusBar()->showMessage(bspvision::uiText(
-                "Could not register global F7 (another app may own it); F7 works while this window is focused.",
-                "Не удалось зарегистрировать глобальную F7 (клавиша занята); F7 будет работать, когда активно это окно."));
+                "Global F7 registration failed; keyboard polling fallback is active.",
+                "Не удалось зарегистрировать глобальную F7; включён резервный опрос клавиши."));
         }
 #endif
     }
@@ -254,7 +257,10 @@ protected:
     void keyPressEvent(QKeyEvent *event) override {
         if (event->key() == Qt::Key_F7 && !event->isAutoRepeat()) {
 #if defined(Q_OS_WIN)
-            if (!hotkeyRegistered_) toggleAutoAim();
+            if (!hotkeyRegistered_) {
+                f7WasDown_ = true;
+                toggleAutoAim();
+            }
 #else
             toggleAutoAim();
 #endif
@@ -686,8 +692,8 @@ private:
         fovRow->addStretch();
         liveLayout->addLayout(fovRow);
         liveStatusLabel_ = new QLabel(bspvision::uiText(
-            "F7 enables closed-loop ballistic auto aim in the foreground Garry's Mod window. It calibrates mouse-to-angle response from cl_showpos; F7 again immediately restores manual control.",
-            "F7 включает автодоводку по рассчитанной траектории в активном окне Garry's Mod. Программа калибрует связь мыши с углами по cl_showpos; повторное F7 возвращает ручное управление."), liveGroup);
+            "F7 enables closed-loop ballistic auto aim in the selected foreground window. It calibrates mouse-to-angle response from cl_showpos; F7 again immediately restores manual control.",
+            "F7 включает автодоводку по рассчитанной траектории в выбранном активном окне. Программа калибрует связь мыши с углами по cl_showpos; повторное F7 возвращает ручное управление."), liveGroup);
         liveStatusLabel_->setWordWrap(true);
         liveLayout->addWidget(liveStatusLabel_);
         liveTelemetryLabel_ = new QLabel(liveGroup);
@@ -1293,6 +1299,16 @@ private:
         return delta - 180.0;
     }
 
+    void pollF7Fallback() {
+#if defined(Q_OS_WIN)
+        if (hotkeyRegistered_) return;
+        const bool down = (GetAsyncKeyState(VK_F7) & 0x8000) != 0;
+        if (down && !f7WasDown_ && (autoAimEnabled_ || isSelectedTargetForeground()))
+            toggleAutoAim();
+        f7WasDown_ = down;
+#endif
+    }
+
     HWND selectedTargetWindow() const {
 #if defined(Q_OS_WIN)
         if (!targetWindowCombo_) return nullptr;
@@ -1329,10 +1345,39 @@ private:
             return TRUE;
         }, reinterpret_cast<LPARAM>(&context));
         const quintptr previousRaw = reinterpret_cast<quintptr>(previous);
+        bool restoredPrevious = false;
         for (int i = 1; i < targetWindowCombo_->count(); ++i) {
-            if (static_cast<quintptr>(targetWindowCombo_->itemData(i).toULongLong()) == previousRaw) {
+            if (previousRaw != 0 &&
+                static_cast<quintptr>(targetWindowCombo_->itemData(i).toULongLong()) == previousRaw) {
                 targetWindowCombo_->setCurrentIndex(i);
+                restoredPrevious = true;
                 break;
+            }
+        }
+
+        // Pick the game's window by default so F7 is usable without requiring
+        // the user to discover that the combo was left on "Select a window".
+        if (!restoredPrevious && previousRaw == 0) {
+            for (int i = 1; i < targetWindowCombo_->count(); ++i) {
+                const HWND candidate = reinterpret_cast<HWND>(
+                    static_cast<quintptr>(targetWindowCombo_->itemData(i).toULongLong()));
+                DWORD pid = 0;
+                GetWindowThreadProcessId(candidate, &pid);
+                if (!pid) continue;
+                HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+                if (!process) continue;
+                wchar_t imagePath[32768] = {};
+                DWORD pathLength = static_cast<DWORD>(sizeof(imagePath) / sizeof(imagePath[0]));
+                const BOOL ok = QueryFullProcessImageNameW(process, 0, imagePath, &pathLength);
+                CloseHandle(process);
+                if (!ok) continue;
+                const QString executable = QFileInfo(QString::fromWCharArray(
+                    imagePath, static_cast<qsizetype>(pathLength))).fileName();
+                if (executable.compare(QStringLiteral("gmod.exe"), Qt::CaseInsensitive) == 0 ||
+                    executable.compare(QStringLiteral("gmod_win64.exe"), Qt::CaseInsensitive) == 0) {
+                    targetWindowCombo_->setCurrentIndex(i);
+                    break;
+                }
             }
         }
 #endif
@@ -1383,8 +1428,8 @@ private:
         }
         if (!targetDefined_ || !trajectoryCalculated_) {
             statusBar()->showMessage(bspvision::uiText(
-                "Calculate a ballistic solution first, then press F7 in Garry's Mod.",
-                "Сначала рассчитайте траекторию, затем нажмите F7 в Garry's Mod."));
+                "Calculate a ballistic solution first, select the target window, then press F7 while it is focused.",
+                "Сначала рассчитайте траекторию, выберите целевое окно и нажмите F7, когда оно активно."));
             return;
         }
         if (lastTrajectoryBlocked_) {
@@ -1414,8 +1459,8 @@ private:
         mouseYawDegreesPerCount_ = 0.0;
         mousePitchDegreesPerCount_ = 0.0;
         autoAimStatus_ = bspvision::uiText(
-            "AUTO AIM · calibrating mouse response (keep Garry's Mod focused)",
-            "АВТОСУО · калибровка мыши (не переключайтесь из Garry's Mod)");
+            "AUTO AIM · calibrating mouse response (keep selected window focused)",
+            "АВТОСУО · калибровка мыши (не переключайтесь из выбранного окна)");
         if (overlay_ && !overlay_->isVisible()) startExternalOverlay();
         syncOverlay();
         statusBar()->showMessage(bspvision::uiText(
@@ -1626,6 +1671,7 @@ private:
     }
 
     static constexpr int AutoAimHotkeyId = 0xB570;
+    bool f7WasDown_ = false;
     AutoAimStage autoAimStage_ = AutoAimStage::Disabled;
     bool autoAimEnabled_ = false;
     int autoAimProbeAttempts_ = 0;
