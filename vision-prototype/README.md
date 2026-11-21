@@ -11,11 +11,11 @@ Bilingual Windows desktop tool for inspecting Source Engine BSP v20 geometry and
 - Select X/Y coordinates by clicking the map. Enter Z manually to choose the correct floor.
 - Plan a projectile path in XY, XZ and oblique 3D views, and solve for low or high ideal ballistic arcs.
 - Run synthetic BSP parser tests with CTest.
-- Optional transparent external overlay drawn by the desktop app. It uses Windows Raw Input to estimate yaw/pitch from mouse deltas; no Garry's Mod addon or server-side access is needed. See [the bilingual overlay guide](../docs/EXTERNAL_OVERLAY_RU_EN.md).
+- Native SBGL Bridge integration: local named-pipe telemetry from a GMod binary Lua module, with in-game HUD marker commands. See [native bridge build and setup](../gmod-addon/native-bridge/README.md).
 
 ## Limitations
 
-Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics. The external overlay estimates angles from raw mouse deltas and user-entered starting angles; it is not internal game telemetry and can drift if controls, cameras, sensitivity or FOV change.
+Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics. The native bridge reports camera/player telemetry exposed through the client Lua API and best-effort LVS weapon-handler data. Custom vehicle camera and barrel direction still vary by LVS addon. The binary module is source-only and must be built for the installed GMod client architecture; this repository change has not been compiled or verified in-game.
 
 ## Build on Windows
 
@@ -38,6 +38,6 @@ ctest --test-dir build -C Release --output-on-failure
 3. Leave **Show skybox surfaces / Показывать поверхности скайбокса** unchecked first. Enable it only to inspect those faces.
 4. Use **Top-down XY / Сверху XY** to select horizontal coordinates, or **Orbit 3D / 3D-орбита** to rotate with the left mouse button and zoom with the wheel.
 5. Open **Ballistic lab / Баллистика**, enter/select the target coordinates, then calculate the current arc or solve for the low/high arc. The Z coordinate must be entered manually.
-6. For the optional external overlay, use **Paste getpos from clipboard** to fill launch coordinates and initial yaw/pitch, select a target and solve an arc, adjust sensitivity/`m_yaw`/`m_pitch` and horizontal FOV, then click **Start overlay**. Switch back to the game. Use **Stop overlay** to close it. Details: [overlay guide](../docs/EXTERNAL_OVERLAY_RU_EN.md).
+6. For the live bridge, follow [the native bridge guide](../gmod-addon/native-bridge/README.md), build the module, install the Lua adapter, and restart GMod. The Qt app accepts telemetry automatically when the module connects. The in-game marker is a visual reference; it does not control input or firing.
 
 For the detailed Russian/English user manual, see `docs/USER_MANUAL.md`.
