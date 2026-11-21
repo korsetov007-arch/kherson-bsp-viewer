@@ -3,6 +3,7 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -33,6 +34,8 @@ void Heightfield::clear() {
     minX_ = maxX_ = minY_ = maxY_ = 0.0;
     ground_.clear();
     canopy_.clear();
+    contours128_.clear();
+    contours256_.clear();
     hillshade_ = {};
 }
 
@@ -195,8 +198,84 @@ bool Heightfield::build(const QVector<BspPolygon> &polygons,
         }
     }
 
+    buildContours(128.0, &contours128_);
+    buildContours(256.0, &contours256_);
+
     if (error) error->clear();
     return true;
+}
+
+void Heightfield::buildContours(double interval, QVector<QLineF> *output) const {
+    if (!output) return;
+    output->clear();
+    if (!isValid() || !(interval > 0.0) || !std::isfinite(interval) ||
+        width_ < 2 || height_ < 2) return;
+
+    const std::array<std::array<int, 2>, 4> edgeIndices{{{{0, 1}}, {{1, 2}}, {{2, 3}}, {{3, 0}}}};
+    for (int row = 0; row + 1 < height_; ++row) {
+        const double y0 = maxY_ - (static_cast<double>(row) + 0.5) * cellSize_;
+        const double y1 = maxY_ - (static_cast<double>(row) + 1.5) * cellSize_;
+        for (int col = 0; col + 1 < width_; ++col) {
+            const double x0 = minX_ + (static_cast<double>(col) + 0.5) * cellSize_;
+            const double x1 = minX_ + (static_cast<double>(col) + 1.5) * cellSize_;
+            const qsizetype aIndex = static_cast<qsizetype>(row) * width_ + col;
+            const qsizetype bIndex = aIndex + 1;
+            const qsizetype dIndex = aIndex + width_;
+            const qsizetype cIndex = dIndex + 1;
+            const float values[4] = {ground_[aIndex], ground_[bIndex], ground_[cIndex], ground_[dIndex]};
+            if (!std::isfinite(values[0]) || !std::isfinite(values[1]) ||
+                !std::isfinite(values[2]) || !std::isfinite(values[3])) continue;
+
+            const double localMin = std::min({values[0], values[1], values[2], values[3]});
+            const double localMax = std::max({values[0], values[1], values[2], values[3]});
+            if (localMax - localMin < 1e-6) continue;
+            const QPointF points[4] = {
+                QPointF(x0, y0), QPointF(x1, y0),
+                QPointF(x1, y1), QPointF(x0, y1)
+            };
+
+            const qint64 firstLevelIndex = static_cast<qint64>(std::floor(localMin / interval)) + 1;
+            const double firstLevel = static_cast<double>(firstLevelIndex) * interval;
+            for (double level = firstLevel; level < localMax - 1e-6; level += interval) {
+                std::array<QPointF, 4> intersections{};
+                int count = 0;
+                for (const auto &edge : edgeIndices) {
+                    const int ia = edge[0];
+                    const int ib = edge[1];
+                    const double za = values[ia];
+                    const double zb = values[ib];
+                    const bool crosses = (za < level && zb >= level) ||
+                                         (zb < level && za >= level);
+                    if (!crosses || std::abs(zb - za) < 1e-9) continue;
+                    const double t = std::clamp((level - za) / (zb - za), 0.0, 1.0);
+                    const QPointF point = points[ia] + (points[ib] - points[ia]) * t;
+                    bool duplicate = false;
+                    for (int i = 0; i < count; ++i) {
+                        if (QLineF(intersections[static_cast<size_t>(i)], point).length() < 1e-7) {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (!duplicate && count < static_cast<int>(intersections.size()))
+                        intersections[static_cast<size_t>(count++)] = point;
+                }
+
+                if (count == 2) {
+                    if (QLineF(intersections[0], intersections[1]).length() > 1e-7)
+                        output->push_back(QLineF(intersections[0], intersections[1]));
+                } else if (count == 4) {
+                    const double center = (values[0] + values[1] + values[2] + values[3]) * 0.25;
+                    if (center >= level) {
+                        output->push_back(QLineF(intersections[0], intersections[1]));
+                        output->push_back(QLineF(intersections[2], intersections[3]));
+                    } else {
+                        output->push_back(QLineF(intersections[0], intersections[3]));
+                        output->push_back(QLineF(intersections[1], intersections[2]));
+                    }
+                }
+            }
+        }
+    }
 }
 
 qsizetype Heightfield::cellIndexAt(double x, double y) const {
