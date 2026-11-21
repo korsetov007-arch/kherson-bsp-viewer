@@ -12,6 +12,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QHash>
 #include <QLocale>
@@ -82,7 +83,9 @@ protected:
         painter.drawText(banner.adjusted(14, 5, -14, -5),
                          Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap,
                          message_.isEmpty()
-                             ? QStringLiteral("Drag a rectangle around cl_showpos pos:/ang: (and vel:) lines. Esc cancels.")
+                             ? bspvision::uiText(
+                                   "Drag a rectangle around cl_showpos pos:/ang: (and vel:) lines. Esc or right-click cancels.",
+                                   "Обведите рамкой строки cl_showpos pos:/ang: (и vel:). Esc или правая кнопка — отмена.")
                              : message_);
 
         if (dragging_) {
@@ -137,7 +140,9 @@ protected:
         dragging_ = false;
         const QRect selected = currentRect().intersected(rect());
         if (selected.width() < 160 || selected.height() < 32) {
-            message_ = QStringLiteral("Area too small. Drag at least 160 × 32 px around the text; Esc cancels.");
+            message_ = bspvision::uiText(
+                "Area too small. Drag at least 160 × 32 px around the text; Esc cancels.",
+                "Область слишком мала. Выделите не менее 160 × 32 px вокруг текста; Esc — отмена.");
             update();
             event->accept();
             return;
@@ -147,6 +152,7 @@ protected:
         const QRect physicalPixels(
             qRound(selected.x() * ratio), qRound(selected.y() * ratio),
             qRound(selected.width() * ratio), qRound(selected.height() * ratio));
+        finished_ = true;
         if (regionSelected) regionSelected(physicalPixels);
         close();
         event->accept();
@@ -161,20 +167,34 @@ protected:
         QWidget::keyPressEvent(event);
     }
 
+    void closeEvent(QCloseEvent *event) override {
+        if (!finished_) {
+            finished_ = true;
+            const auto notifyCancelled = canceled;
+            if (notifyCancelled) {
+                QTimer::singleShot(0, parentWidget(), [notifyCancelled] { notifyCancelled(); });
+            }
+        }
+        QWidget::closeEvent(event);
+    }
+
 private:
     QRect currentRect() const {
         return QRect(anchor_, cursorPosition_).normalized();
     }
 
     void cancelSelection() {
-        if (canceled) canceled();
+        if (finished_) return;
+        finished_ = true;
         close();
+        if (canceled) canceled();
     }
 
     QScreen *screen_ = nullptr;
     QPoint anchor_;
     QPoint cursorPosition_;
     bool dragging_ = false;
+    bool finished_ = false;
     QString message_;
 };
 
@@ -635,7 +655,7 @@ private:
         const QSize primarySize = primary ? primary->size() : QSize(1920, 1080);
 
         screenReaderEnabledCheck_ = new QCheckBox(
-            bspvision::uiText("Enable DXGI template reader", "Включить шаблонное распознавание через DXGI"), screenGroup);
+            bspvision::uiText("Enable screen reader", "Включить чтение с экрана"), screenGroup);
         screenReaderEnabledCheck_->setChecked(screenSettings.value(QStringLiteral("clShowPos/enabled"), false).toBool());
         screenLayout->addWidget(screenReaderEnabledCheck_);
 
@@ -692,7 +712,7 @@ private:
         auto *screenNote = new QLabel(
             bspvision::uiText(
                 "Classic pixel-template matching; no OCR engine, neural network or game module is used. pos is Source MainViewOrigin and may differ from the weapon muzzle.",
-                "Распознавание пиксельными шаблонами; OCR, нейросеть, Lua-модуль и мост не используются. pos — это MainViewOrigin Source, он может отличаться от дульного среза."), screenGroup);
+                "Распознавание пиксельными шаблонами; без OCR, нейросети и игровых модулей. pos — это MainViewOrigin Source, он может отличаться от дульного среза."), screenGroup);
         screenNote->setWordWrap(true);
         screenLayout->addWidget(screenNote);
         layout->addWidget(screenGroup);
