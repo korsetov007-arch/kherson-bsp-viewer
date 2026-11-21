@@ -51,11 +51,34 @@ QByteArray makeSyntheticBsp() {
     putI32(surfEdges, 4, 1);
     putI32(surfEdges, 8, 2);
 
-    QByteArray faces(56, '\0');
-    putI32(faces, 4, 0);   // firstedge
-    putI16(faces, 8, 3);   // numedges
-    putI16(faces, 10, 0); // texinfo
-    putI16(faces, 12, -1);// no displacement
+    QByteArray faces(112, '\0');
+    putI32(faces, 4, 0);     // firstedge
+    putI16(faces, 8, 3);     // numedges
+    putI16(faces, 10, 0);    // non-sky texinfo
+    putI16(faces, 12, -1);   // no displacement
+    putI32(faces, 56 + 4, 0);
+    putI16(faces, 56 + 8, 3);
+    putI16(faces, 56 + 10, 1); // sky texinfo
+    putI16(faces, 56 + 12, -1);
+
+    QByteArray texInfo(144, '\0');
+    putI32(texInfo, 68, 0);        // wall material -> texdata 0
+    putI32(texInfo, 72 + 68, 1);   // sky material -> texdata 1
+
+    QByteArray texData(64, '\0');
+    putI32(texData, 12, 0);        // string-table ID for wall
+    putI32(texData, 32 + 12, 1);   // string-table ID for sky
+
+    QByteArray textureStrings;
+    textureStrings.append("brick/wall01");
+    textureStrings.append('\0');
+    const qint32 skyNameOffset = static_cast<qint32>(textureStrings.size());
+    textureStrings.append("tools/toolsskybox");
+    textureStrings.append('\0');
+
+    QByteArray textureStringTable(8, '\0');
+    putI32(textureStringTable, 0, 0);
+    putI32(textureStringTable, 4, skyNameOffset);
 
     const auto addLump = [&bytes](int index, const QByteArray &lump) {
         const qint32 offset = static_cast<qint32>(bytes.size());
@@ -67,10 +90,14 @@ QByteArray makeSyntheticBsp() {
         putU32(bytes, headerOffset + 12, 0);
     };
 
+    addLump(2, texData);
     addLump(3, vertices);
+    addLump(6, texInfo);
     addLump(7, faces);
     addLump(12, edges);
     addLump(13, surfEdges);
+    addLump(43, textureStrings);
+    addLump(44, textureStringTable);
     return bytes;
 }
 
@@ -106,11 +133,18 @@ int main(int argc, char **argv) {
     if (bsp.vertices().size() != 3) return fail("expected three vertices");
     if (bsp.edges().size() != 3) return fail("expected three edges");
     if (bsp.surfEdges().size() != 3) return fail("expected three surf edges");
-    if (bsp.faces().size() != 1) return fail("expected one face");
+    if (bsp.faces().size() != 2) return fail("expected two faces with different materials");
+    if (bsp.skyFaceCount() != 1) return fail("expected one sky-textured face");
 
     const auto polygons = bsp.facePolygons();
     if (polygons.size() != 1 || polygons.first().vertices.size() != 3)
-        return fail("expected one reconstructed triangle");
+        return fail("default geometry should exclude the sky-textured face");
+    if (polygons.first().skySurface || polygons.first().materialName != QStringLiteral("brick/wall01"))
+        return fail("visible face material was not resolved correctly");
+    const auto allPolygons = bsp.facePolygons(true);
+    if (allPolygons.size() != 2 || !allPolygons.last().skySurface ||
+        allPolygons.last().materialName != QStringLiteral("tools/toolsskybox"))
+        return fail("includeSkySurfaces should retain and classify the sky face");
     if (polygons.first().vertices.at(1).x != 128.0F)
         return fail("face vertex coordinates were decoded incorrectly");
 
@@ -124,6 +158,6 @@ int main(int argc, char **argv) {
     if (!writeFile(path, badBounds)) return fail("could not write invalid lump-range test file");
     if (bsp.load(path, &error)) return fail("out-of-range lump was accepted");
 
-    std::cout << "PASS: BSP v20 header, geometry parsing, face reconstruction, and invalid-input checks\n";
+    std::cout << "PASS: BSP v20 header, geometry parsing, face reconstruction, sky material filtering, and invalid-input checks\n";
     return 0;
 }
