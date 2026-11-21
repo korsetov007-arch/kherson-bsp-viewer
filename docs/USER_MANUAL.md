@@ -136,7 +136,7 @@ This is an experimental implementation. Recognition can vary with font rasteriza
 
 **Ограничения:** контроллер управляет углами камеры через обычный относительный ввод мыши и читает `cl_showpos`; он не читает напрямую `cannon_yaw`/`cannon_pitch` из LVS и не подтверждает, что башня повторяет камеру в каждом режиме. Он работает только если LVS действительно связывает направление взгляда с наведением орудия и игра принимает синтетический ввод мыши. Если калибровка сообщает, что yaw/pitch не реагирует, приложение останавливается, а не продолжает посылать команды. В Garry's Mod переменная `m_rawinput` по умолчанию включена; она переключает игру на Raw Input, тогда как Windows `SendInput` создаёт синтетические события мыши в обычном потоке ввода. Если игра не видит тестовые движения, попробуйте вручную в консоли `m_rawinput 0`, затем снова нажмите F7. Приложение само не меняет эту переменную. Точная физика управляемой ракеты и её внешней сущности по-прежнему не моделируется.
 
-F7 зарегистрирована как глобальная клавиша Windows. Если клавиша занята другим приложением, резервный вариант работает, когда активно окно Geometry Lab. Ввод мыши отправляется только при активном процессе `gmod.exe`.
+F7 зарегистрирована как глобальная клавиша Windows. Если клавиша занята другим приложением, резервный вариант работает, когда активно окно Geometry Lab. Ввод мыши отправляется только при активном процессе Garry’s Mod (`gmod.exe` или `gmod_win64.exe` для актуальной 64-битной сборки).
 
 ### English
 1. In Ballistic lab, set the launch point, target, speed and gravity, then solve for the target. For the BM-30, 4000 units/s remains an estimate copied from the addon's HUD predictor, not a verified missile speed.
@@ -147,7 +147,7 @@ F7 зарегистрирована как глобальная клавиша W
 
 **Limitations:** the controller steers camera angles using ordinary relative mouse input and reads `cl_showpos`; it does not directly read LVS `cannon_yaw`/`cannon_pitch`, nor can it guarantee that the turret follows the camera in every mode. It works only when LVS maps view direction to gun aiming and the game accepts synthetic mouse input. If calibration reports that yaw/pitch did not respond, the app stops instead of continuing to inject input. Garry's Mod documents `m_rawinput` as enabled by default; it selects Raw Input, while Windows `SendInput` synthesizes mouse events into the normal input stream. If the game does not see the calibration movement, try `m_rawinput 0` manually in the game console and press F7 again. The app does not change this variable itself. Guided missile physics and the external rocket entity are still not simulated.
 
-F7 is registered as a global Windows hotkey. If another application owns it, the fallback works while the Geometry Lab window is focused. Mouse input is sent only while the `gmod.exe` process is foreground.
+F7 is registered as a global Windows hotkey. If another application owns it, the fallback works while the Geometry Lab window is focused. Mouse input is sent only while the Garry’s Mod process is foreground (`gmod.exe` or `gmod_win64.exe` for the current 64-bit build).
 
 
 ## Heightfield / hillshade
