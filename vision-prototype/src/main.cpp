@@ -14,7 +14,6 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
-#include <QCryptographicHash>
 #include <QHash>
 #include <QLocale>
 #include <QMenu>
@@ -229,7 +228,7 @@ public:
         overlayTimer_->start(16);
 #ifdef Q_OS_WIN
         hotkeyRegistered_ = RegisterHotKey(
-            reinterpret_cast<HWND>(winId()), LandmarkHotkeyId, MOD_NOREPEAT, VK_F7) != FALSE;
+            reinterpret_cast<HWND>(winId()), AutoAimHotkeyId, MOD_NOREPEAT, VK_F7) != FALSE;
         if (!hotkeyRegistered_) {
             statusBar()->showMessage(bspvision::uiText(
                 "Could not register global F7 (another app may own it); F7 works while this window is focused.",
@@ -242,8 +241,8 @@ public:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override {
         MSG *msg = static_cast<MSG *>(message);
         if (msg && msg->message == WM_HOTKEY &&
-            msg->wParam == static_cast<WPARAM>(LandmarkHotkeyId)) {
-            toggleLandmarkTracking();
+            msg->wParam == static_cast<WPARAM>(AutoAimHotkeyId)) {
+            toggleAutoAim();
             if (result) *result = 0;
             return true;
         }
@@ -255,9 +254,9 @@ protected:
     void keyPressEvent(QKeyEvent *event) override {
         if (event->key() == Qt::Key_F7 && !event->isAutoRepeat()) {
 #if defined(Q_OS_WIN)
-            if (!hotkeyRegistered_) toggleLandmarkTracking();
+            if (!hotkeyRegistered_) toggleAutoAim();
 #else
-            toggleLandmarkTracking();
+            toggleAutoAim();
 #endif
             event->accept();
             return;
@@ -269,7 +268,7 @@ public:
     ~MainWindow() override {
 #ifdef Q_OS_WIN
         if (hotkeyRegistered_)
-            UnregisterHotKey(reinterpret_cast<HWND>(winId()), LandmarkHotkeyId);
+            UnregisterHotKey(reinterpret_cast<HWND>(winId()), AutoAimHotkeyId);
 #endif
         if (overlay_) {
             overlay_->close();
@@ -346,10 +345,6 @@ private:
         liveTelemetryLabel_ = nullptr;
         screenReaderStatusLabel_ = nullptr;
         cropRegionLabel_ = nullptr;
-        landmarkStatusLabel_ = nullptr;
-        landmarkZ_ = nullptr;
-        pickLandmarkButton_ = nullptr;
-        clearLandmarkButton_ = nullptr;
         screenReaderEnabledCheck_ = nullptr;
         screenCaptureX_ = screenCaptureY_ = screenCaptureWidth_ = screenCaptureHeight_ = nullptr;
         useScreenPositionButton_ = nullptr;
@@ -385,7 +380,6 @@ private:
         if (!bspFile_.isLoaded() || !mapView_ || !meshView_ || !ballisticsView_) return;
         const QVector<bspvision::BspPolygon> polygons = bspFile_.facePolygons(showSkybox_);
         mapView_->setMap(bspFile_.vertices(), polygons);
-        mapView_->setWorldLandmark(landmarkPosition_.x(), landmarkPosition_.y(), hasLandmark_);
         if (heightfield_.isValid()) {
             mapView_->setHeightfield(heightfield_.hillshadeImage(), heightfield_.worldBounds());
             mapView_->setHeightfieldContours(heightfieldContourInterval_ == 256
@@ -406,16 +400,6 @@ private:
         coordinateLabel_->setText(bspvision::uiText(
             "Click the map preview to inspect XY coordinates. Z is ambiguous because maps can contain multiple floors. Sky-textured faces are hidden by default.",
             "Нажмите на карту, чтобы выбрать X/Y. Координата Z неоднозначна из-за нескольких этажей. Поверхности с sky-материалами скрыты по умолчанию."));
-        if (landmarkStatusLabel_) {
-            landmarkStatusLabel_->setText(hasLandmark_
-                ? bspvision::uiText("Aiming landmark: X=%1, Y=%2, Z=%3. Press F7 to show/hide it.",
-                                    "Круг-ориентир: X=%1, Y=%2, Z=%3. F7 — показать/скрыть.")
-                      .arg(landmarkPosition_.x(), 0, 'f', 1)
-                      .arg(landmarkPosition_.y(), 0, 'f', 1)
-                      .arg(landmarkPosition_.z(), 0, 'f', 1)
-                : bspvision::uiText("No aiming landmark set. Pick one point on the BSP map, then press F7.",
-                                    "Круг-ориентир не задан. Выберите точку на карте BSP, затем нажмите F7."));
-        }
     }
 
     QString localizeLumpName(const QString &name) const {
@@ -1386,7 +1370,7 @@ private:
         syncOverlay();
     }
 
-    void toggleLandmarkTracking() {
+    void toggleAutoAim() {
         if (!hasLandmark_) {
             statusBar()->showMessage(bspvision::uiText(
                 "Set an aiming landmark first: BSP geometry → Pick aiming circle…",
@@ -1483,7 +1467,7 @@ private:
         }
     }
 
-    static constexpr int LandmarkHotkeyId = 0xB570;
+    static constexpr int AutoAimHotkeyId = 0xB570;
     QTabWidget *tabs_ = nullptr;
     QMenu *settingsMenu_ = nullptr;
     QMenu *languageMenu_ = nullptr;
