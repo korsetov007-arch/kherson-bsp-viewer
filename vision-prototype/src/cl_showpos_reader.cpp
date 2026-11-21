@@ -4,9 +4,9 @@
 #include <QFontDatabase>
 #include <QFontInfo>
 #include <QFontMetrics>
+#include <QHash>
 #include <QPainter>
 #include <QRegularExpression>
-#include <QSet>
 #include <QtMath>
 
 #include <algorithm>
@@ -288,10 +288,19 @@ public:
         }
 
         ++framesSeen_;
-        if (!calibrated_ && !calibrate(mask)) {
-            if (error) *error = QStringLiteral(
-                "No confident cl_showpos template match in this crop. Enable cl_showpos 1 and adjust the capture rectangle.");
-            return false;
+        if (!calibrated_) {
+            // First attempt immediately, then retry only occasionally. A missing
+            // HUD must not trigger dozens of font/position scans per second.
+            if (framesSeen_ != 1 && (framesSeen_ % 30) != 1) {
+                if (error) *error = QStringLiteral(
+                    "Waiting for a cl_showpos template match. Enable cl_showpos 1 and adjust the capture rectangle if needed.");
+                return false;
+            }
+            if (!calibrate(mask)) {
+                if (error) *error = QStringLiteral(
+                    "No confident cl_showpos template match in this crop. Enable cl_showpos 1 and adjust the capture rectangle.");
+                return false;
+            }
         }
 
         const int lineStep = profile_.cellHeight + 2;
