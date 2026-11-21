@@ -104,12 +104,12 @@ bool RawMouseTracker::isGModForeground() {
         || path.endsWith(QStringLiteral("\\hl2.exe"));
     const bool titleIdentifiesGMod = title.contains(QStringLiteral("garry's mod"))
         || title.contains(QStringLiteral("garrys mod"));
-    const bool identifiesGMod = path.contains(QStringLiteral("garrysmod"))
-        || path.contains(QStringLiteral("garry's mod"))
-        || titleIdentifiesGMod;
-    // If Windows denies querying the process image path, accept the specific GMod window title.
+    const bool gmodPath = path.contains(QStringLiteral("garrysmod"))
+        || path.contains(QStringLiteral("garry's mod"));
+    const bool identifiesGMod = gmodPath || titleIdentifiesGMod;
+    // Accommodate both hl2.exe and builds whose executable name differs but lives in the GMod folder.
     gameForeground_ = (isSourceExecutable && identifiesGMod)
-        || (path.isEmpty() && titleIdentifiesGMod);
+        || (titleIdentifiesGMod && (path.isEmpty() || gmodPath));
     return gameForeground_;
 #else
     gameForeground_ = false;
