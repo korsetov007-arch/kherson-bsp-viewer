@@ -111,7 +111,8 @@ double edgeFunction(const ScreenVertex &a, const ScreenVertex &b,
 // Interpolating inverse depth is perspective-correct for screen-space triangles.
 void rasterizeTriangle(QImage &image, std::vector<double> &depthBuffer,
                        const QRectF &viewport, const ScreenVertex &a,
-                       const ScreenVertex &b, const ScreenVertex &c, QRgb color) {
+                       const ScreenVertex &b, const ScreenVertex &c, QRgb color,
+                       quint64 *pixelsWritten) {
     const double area = edgeFunction(a, b, c.x, c.y);
     if (!std::isfinite(area) || std::abs(area) < 1e-8) return;
 
@@ -150,6 +151,7 @@ void rasterizeTriangle(QImage &image, std::vector<double> &depthBuffer,
             if (depth >= depthBuffer[index]) continue;
             depthBuffer[index] = depth;
             pixels[x] = color;
+            if (pixelsWritten) ++(*pixelsWritten);
         }
     }
 }
@@ -252,7 +254,7 @@ void Bsp3DView::clearMap() {
 }
 
 QRectF Bsp3DView::viewportRect() const {
-    return QRectF(rect()).adjusted(18.0, 24.0, -18.0, -18.0);
+    return QRectF(rect()).adjusted(18.0, 40.0, -18.0, -18.0);
 }
 
 void Bsp3DView::paintEvent(QPaintEvent *event) {
@@ -296,10 +298,20 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
     const double focalLength = std::min(viewport.width(), viewport.height()) * 2.0;
     const double nearPlane = std::max(1e-4, mapDiameter_ * 1e-5);
     const double zSpan = std::max(1.0, maxZ_ - minZ_);
-    int renderedTriangles = 0;
+    const Vec3 lightDirection = normalized(Vec3{-0.42, -0.56, 0.72});
+    int sourceFacePolygons = 0;
+    int displacementPolygons = 0;
+    int sourceProjectedTriangles = 0;
+    int displacementProjectedTriangles = 0;
+    int sourceRasterizedTriangles = 0;
+    int displacementRasterizedTriangles = 0;
+    quint64 sourcePixelsWritten = 0;
+    quint64 displacementPixelsWritten = 0;
 
     for (const BspPolygon &face : polygons_) {
         if (face.vertices.size() < 3) continue;
+        if (face.displacementSurface) ++displacementPolygons;
+        else ++sourceFacePolygons;
 
         // Find a stable face normal; the first three points can be collinear on
         // some imported faces even though a later triple defines the plane.
@@ -312,8 +324,9 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
             normalLength = magnitude(normal);
             if (normalLength > 1e-12 && std::isfinite(normalLength)) break;
         }
-        const double verticality = normalLength > 1e-12
-            ? std::abs(normal.z) / normalLength : 0.0;
+        if (normalLength <= 1e-12 || !std::isfinite(normalLength)) continue;
+        const Vec3 unitNormal = normal * (1.0 / normalLength);
+        const double illumination = 0.22 + 0.78 * std::abs(dot(unitNormal, lightDirection));
 
         double zAverage = 0.0;
         int finiteVertexCount = 0;
@@ -335,10 +348,12 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
         const double normalizedHeight = std::clamp(
             (zAverage - minZ_) / zSpan, 0.0, 1.0);
         const double shade = std::clamp(
-            62.0 + 76.0 * verticality + 22.0 * normalizedHeight, 40.0, 170.0);
-        const int red = static_cast<int>(shade * 0.76);
-        const int green = static_cast<int>(shade * 0.88);
-        const int blue = static_cast<int>(shade);
+            58.0 + 112.0 * illumination + 18.0 * normalizedHeight, 58.0, 190.0);
+        // Use different restrained tints for world brushes/faces and displacement
+        // terrain so walls and buildings do not disappear into the dark background.
+        const int red = static_cast<int>(shade * (face.displacementSurface ? 0.88 : 0.70));
+        const int green = static_cast<int>(shade * (face.displacementSurface ? 0.94 : 0.84));
+        const int blue = static_cast<int>(shade * (face.displacementSurface ? 0.82 : 1.00));
         const QRgb faceColor = qRgba(red, green, blue, 255);
 
         // Clip each polygon against the near plane before projection. Rejecting
@@ -403,17 +418,36 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
                 triangleMaxY < viewport.top() || triangleMinY > viewport.bottom())
                 continue;
 
-            rasterizeTriangle(meshImage, depthBuffer, viewport, a, b, c, faceColor);
-            ++renderedTriangles;
+            quint64 &pixelCounter = face.displacementSurface
+                ? displacementPixelsWritten : sourcePixelsWritten;
+            const quint64 pixelsBefore = pixelCounter;
+            rasterizeTriangle(meshImage, depthBuffer, viewport, a, b, c,
+                              faceColor, &pixelCounter);
+            if (face.displacementSurface) {
+                ++displacementProjectedTriangles;
+                if (pixelCounter > pixelsBefore) ++displacementRasterizedTriangles;
+            } else {
+                ++sourceProjectedTriangles;
+                if (pixelCounter > pixelsBefore) ++sourceRasterizedTriangles;
+            }
         }
     }
 
     painter.drawImage(QPoint(0, 0), meshImage);
-    painter.setPen(QColor(211, 216, 224));
-    painter.drawText(QRectF(10, 3, width() - 20, 18), Qt::AlignLeft | Qt::AlignVCenter,
-        uiText("Orbit 3D · drag to orbit · wheel to zoom · double-click to reset · triangles: %1",
-               "3D-орбита · тяните для вращения · колесо — масштаб · двойной щелчок — сброс · треугольников: %1")
-            .arg(renderedTriangles));
+    painter.setPen(QColor(226, 232, 241));
+    painter.drawText(QRectF(10, 2, width() - 20, 17), Qt::AlignLeft | Qt::AlignVCenter,
+        uiText("Orbit 3D · drag: orbit · wheel: zoom (up to 24x) · double-click: reset",
+               "3D-орбита · ЛКМ: вращение · колесо: зум до 24× · двойной щелчок: сброс"));
+    painter.setPen(QColor(175, 198, 218));
+    painter.drawText(QRectF(10, 20, width() - 20, 17), Qt::AlignLeft | Qt::AlignVCenter,
+        uiText("BSP faces: %1 (%2 rasterized) · displacement triangles: %3 (%4 rasterized) · shaded pixels: %5 / %6",
+               "Грани BSP: %1 (%2 отрисовано) · треугольники displacement: %3 (%4 отрисовано) · пикселей: %5 / %6")
+            .arg(sourceFacePolygons)
+            .arg(sourceRasterizedTriangles)
+            .arg(displacementPolygons)
+            .arg(displacementRasterizedTriangles)
+            .arg(sourcePixelsWritten)
+            .arg(displacementPixelsWritten));
 }
 
 void Bsp3DView::mousePressEvent(QMouseEvent *event) {
@@ -472,7 +506,7 @@ void Bsp3DView::mouseDoubleClickEvent(QMouseEvent *event) {
 void Bsp3DView::wheelEvent(QWheelEvent *event) {
     if (!polygons_.isEmpty()) {
         const double steps = static_cast<double>(event->angleDelta().y()) / 120.0;
-        zoom_ = std::clamp(zoom_ * std::pow(1.12, steps), 0.25, 2.5);
+        zoom_ = std::clamp(zoom_ * std::pow(1.14, steps), 0.15, 24.0);
         update();
         event->accept();
         return;
