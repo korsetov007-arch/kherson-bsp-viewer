@@ -772,6 +772,8 @@ private:
                 targetDefined_ = true;
                 trajectoryCalculated_ = false;
                 pickMode_ = 0;
+                updateAutoSolveControls();
+                calculateArcAutomatically();
                 syncOverlay();
                 statusBar()->showMessage(bspvision::uiText("Target point set from map. Set target Z manually if needed.", "Цель выбрана на карте. При необходимости укажите Z вручную."));
             }
@@ -968,13 +970,21 @@ private:
         pitch_->setRange(-89.0, 89.0);
         pitch_->setSingleStep(1.0);
         flightTime_ = makeCoordinate(2.0, physicsGroup);
-        flightTime_->setRange(0.05, 30.0);
-        flightTime_->setSingleStep(0.25);
-        physicsForm->addRow(bspvision::uiText("Speed (units/s)", "Скорость (ед./с)"), speed_);
-        physicsForm->addRow(bspvision::uiText("Gravity (units/s²)", "Гравитация (ед./с²)"), gravity_);
+        flightTime_->setRange(0.05, 300.0);
+        flightTime_->setSingleStep(0.5);
+        physicsForm->addRow(bspvision::uiText("Game speed (units/s)", "Игровая скорость (ед./с)"), speed_);
+        physicsForm->addRow(bspvision::uiText("Game gravity (units/s²)", "Игровая гравитация (ед./с²)"), gravity_);
         physicsForm->addRow(bspvision::uiText("Yaw / azimuth (°)", "Азимут (°)"), yaw_);
         physicsForm->addRow(bspvision::uiText("Pitch / elevation (°)", "Угол возвышения (°)"), pitch_);
         physicsForm->addRow(bspvision::uiText("Flight time (s)", "Время полёта (с)"), flightTime_);
+        autoSolveTargetCheck_ = new QCheckBox(
+            bspvision::uiText("Auto-solve target · shortest low arc", "Авторасчёт цели · кратчайшая низкая дуга"),
+            physicsGroup);
+        autoSolveTargetCheck_->setChecked(true);
+        autoSolveTargetCheck_->setToolTip(bspvision::uiText(
+            "Uses only the in-game speed and gravity entered above. Chooses the lower-time ballistic solution.",
+            "Использует только введённые игровые скорость и гравитацию. Выбирает решение с меньшим временем полёта."));
+        physicsForm->addRow(autoSolveTargetCheck_);
 
         controls->addWidget(launchGroup, 1);
         controls->addWidget(targetGroup, 1);
@@ -1021,28 +1031,43 @@ private:
             ballisticsView_->clearTrajectory();
             trajectoryCalculated_ = false;
             targetDefined_ = false;
+            updateAutoSolveControls();
             ballisticsSummary_->setText(bspvision::uiText("Trajectory and overlay target cleared.", "Траектория и цель оверлея очищены."));
             syncOverlay();
         });
 
         auto invalidateSolution = [this] {
+            if (autoSolveInProgress_) return;
             trajectoryCalculated_ = false;
             if (ballisticsView_) ballisticsView_->clearTrajectory();
             if (ballisticsSummary_) {
                 ballisticsSummary_->setText(bspvision::uiText(
-                    "Parameters changed. Recalculate the trajectory to refresh the overlay.",
-                    "Параметры изменены. Пересчитайте траекторию, чтобы обновить оверлей."));
+                    "Parameters changed. Enable Auto-solve or calculate the trajectory again.",
+                    "Параметры изменены. Включите авторасчёт или пересчитайте траекторию."));
             }
             syncOverlay();
         };
-        const QList<QDoubleSpinBox *> solutionInputs = {
-            originX_, originY_, originZ_, targetX_, targetY_, targetZ_,
-            speed_, gravity_, yaw_, pitch_, flightTime_
+        const QList<QDoubleSpinBox *> solveInputs = {
+            originX_, originY_, originZ_, targetX_, targetY_, targetZ_, speed_, gravity_
         };
-        for (QDoubleSpinBox *field : solutionInputs) {
+        for (QDoubleSpinBox *field : solveInputs) {
+            connect(field, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+                    [this, invalidateSolution](double) {
+                if (autoSolveInProgress_) return;
+                invalidateSolution();
+                calculateArcAutomatically();
+            });
+        }
+        const QList<QDoubleSpinBox *> manualArcInputs = {yaw_, pitch_, flightTime_};
+        for (QDoubleSpinBox *field : manualArcInputs) {
             connect(field, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
                     [invalidateSolution](double) { invalidateSolution(); });
         }
+        connect(autoSolveTargetCheck_, &QCheckBox::toggled, this, [this](bool enabled) {
+            updateAutoSolveControls();
+            if (enabled) calculateArcAutomatically();
+        });
+        updateAutoSolveControls();
     }
 
     void updateCropRegionLabel() {
@@ -1156,6 +1181,22 @@ private:
         syncOverlay();
     }
 
+    void updateAutoSolveControls() {
+        const bool manualAnglesEnabled = !autoSolveTargetCheck_ ||
+            !autoSolveTargetCheck_->isChecked() || !targetDefined_;
+        if (yaw_) yaw_->setEnabled(manualAnglesEnabled);
+        if (pitch_) pitch_->setEnabled(manualAnglesEnabled);
+        if (flightTime_) flightTime_->setEnabled(manualAnglesEnabled);
+    }
+
+    void calculateArcAutomatically() {
+        if (!autoSolveTargetCheck_ || !autoSolveTargetCheck_->isChecked() ||
+            !targetDefined_ || autoSolveInProgress_) return;
+        autoSolveInProgress_ = true;
+        calculateArc(true, false);
+        autoSolveInProgress_ = false;
+    }
+
     void calculateArc(bool solveTarget, bool highArc = false) {
         const double ox = originX_->value(), oy = originY_->value(), oz = originZ_->value();
         const double tx = targetX_->value(), ty = targetY_->value(), tz = targetZ_->value();
@@ -1167,11 +1208,18 @@ private:
         if (ballisticsView_) ballisticsView_->clearTrajectory();
         syncOverlay();
         targetDefined_ = targetDefined_ || solveTarget;
+        updateAutoSolveControls();
 
         if (solveTarget) {
             const double dx = tx - ox, dy = ty - oy, dz = tz - oz;
             const double range = std::hypot(dx, dy);
             if (range < 0.01) {
+                if (autoSolveInProgress_) {
+                    if (ballisticsSummary_) ballisticsSummary_->setText(
+                        bspvision::uiText("Choose different launch and target points.", "Точки старта и цели должны различаться."));
+                    syncOverlay();
+                    return;
+                }
                 QMessageBox::warning(this, bspvision::uiText("Ballistic solver", "Расчёт баллистики"),
                     bspvision::uiText("Launch point and target must differ in XY.", "Точка запуска и цель должны различаться по X/Y."));
                 return;
@@ -1183,8 +1231,15 @@ private:
                 const double v2 = speed * speed;
                 const double discriminant = v2 * v2 - g * (g * range * range + 2.0 * dz * v2);
                 if (discriminant < 0.0) {
+                    if (autoSolveInProgress_) {
+                        if (ballisticsSummary_) ballisticsSummary_->setText(
+                            bspvision::uiText("No in-game ballistic solution for the selected speed, gravity and endpoints.",
+                                              "Для выбранных игровых скорости, гравитации и точек решения нет."));
+                        syncOverlay();
+                        return;
+                    }
                     QMessageBox::information(this, bspvision::uiText("No ballistic solution", "Нет баллистического решения"),
-                        bspvision::uiText("The target is outside the ideal projectile envelope for this speed and gravity. Increase speed, reduce gravity, or choose a nearer target.", "Цель недостижима при заданной скорости и гравитации в идеальной модели. Увеличьте скорость, уменьшите гравитацию или выберите цель ближе."));
+                        bspvision::uiText("The target is outside the ideal projectile envelope for this speed and gravity. Increase the game speed, reduce game gravity, or choose a nearer target.", "Цель недостижима в игровой модели при этих скорости и гравитации. Проверьте параметры или выберите точку ближе."));
                     return;
                 }
                 const double root = std::sqrt(discriminant);
@@ -1193,6 +1248,12 @@ private:
             }
             const double horizontalSpeed = speed * std::cos(pitch);
             if (horizontalSpeed <= 0.01) {
+                if (autoSolveInProgress_) {
+                    if (ballisticsSummary_) ballisticsSummary_->setText(
+                        bspvision::uiText("The selected target requires an unsuitable trajectory.", "Для выбранной цели получилась непригодная траектория."));
+                    syncOverlay();
+                    return;
+                }
                 QMessageBox::warning(this, bspvision::uiText("Ballistic solver", "Расчёт баллистики"),
                     bspvision::uiText("The computed elevation is too steep for a stable horizontal range.", "Полученный угол слишком велик для устойчивого расчёта дальности."));
                 return;
@@ -1200,7 +1261,7 @@ private:
             duration = range / horizontalSpeed;
             yaw_->setValue(qRadiansToDegrees(yaw));
             pitch_->setValue(qRadiansToDegrees(pitch));
-            flightTime_->setValue(std::clamp(duration, 0.05, 30.0));
+            flightTime_->setValue(std::clamp(duration, 0.05, 300.0));
             duration = flightTime_->value();
         }
 
@@ -1208,7 +1269,7 @@ private:
         const double vy = speed * std::cos(pitch) * std::sin(yaw);
         const double vz = speed * std::sin(pitch);
         QVector<QVector3D> points;
-        const int steps = 100;
+        const int steps = std::clamp(static_cast<int>(std::ceil(duration * 24.0)), 120, 2400);
         points.reserve(steps + 1);
         for (int i = 0; i <= steps; ++i) {
             const double t = duration * static_cast<double>(i) / steps;
@@ -1416,6 +1477,8 @@ private:
     QDoubleSpinBox *originX_ = nullptr, *originY_ = nullptr, *originZ_ = nullptr;
     QDoubleSpinBox *targetX_ = nullptr, *targetY_ = nullptr, *targetZ_ = nullptr;
     QDoubleSpinBox *speed_ = nullptr, *gravity_ = nullptr, *yaw_ = nullptr, *pitch_ = nullptr, *flightTime_ = nullptr;
+    QCheckBox *autoSolveTargetCheck_ = nullptr;
+    bool autoSolveInProgress_ = false;
     QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
     QLabel *screenReaderStatusLabel_ = nullptr;
     QLabel *cropRegionLabel_ = nullptr;
