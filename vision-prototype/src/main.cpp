@@ -28,6 +28,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QDateTime>
 #include <QFileInfo>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -699,7 +700,9 @@ private:
         overlay_->setTargetEnabled(enabled);
         const QString state = bridgeConnected_ ? QStringLiteral("Native bridge connected") : QStringLiteral("Waiting for native bridge");
         if (liveStatusLabel_) liveStatusLabel_->setText(state);
-        if (bridgeSocket_ && bridgeSocket_->state() == QLocalSocket::ConnectedState) {
+        if (bridgeSocket_ && bridgeSocket_->state() == QLocalSocket::ConnectedState
+            && QDateTime::currentMSecsSinceEpoch() - lastBridgeCommandMs_ >= 100) {
+            lastBridgeCommandMs_ = QDateTime::currentMSecsSinceEpoch();
             QJsonObject cmd{{"type","target"},{"enabled",enabled},{"yaw",yaw_ ? yaw_->value() : 0.0},{"pitch",pitch_ ? -pitch_->value() : 0.0}};
             bridgeSocket_->write(QJsonDocument(cmd).toJson(QJsonDocument::Compact) + "\n");
             bridgeSocket_->flush();
@@ -759,6 +762,7 @@ private:
     QLocalSocket *bridgeSocket_ = nullptr;
     QJsonObject bridgeTelemetry_;
     bool bridgeConnected_ = false;
+    qint64 lastBridgeCommandMs_ = 0;
     QString loadedMapName_;
     int pickMode_ = 0;
     bool targetDefined_ = false;
