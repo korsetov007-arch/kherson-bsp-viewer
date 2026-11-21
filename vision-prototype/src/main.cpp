@@ -660,8 +660,8 @@ private:
         if (targetScreen) overlay_->showOverlayOn(targetScreen->geometry());
         overlay_->setTargetEnabled(targetDefined_ && trajectoryCalculated_);
         liveStatusLabel_->setText(bspvision::uiText(
-            "Overlay is on. Switch to Garry's Mod; angle tracking updates only while the game is the foreground window. Use borderless/windowed mode if the overlay is hidden by exclusive fullscreen.",
-            "Оверлей включён. Переключитесь в Garry's Mod: углы обновляются, только когда игра на переднем плане. Если оверлей не виден в эксклюзивном fullscreen, включите безрамочный/оконный режим."));
+            "Overlay is on. Switch to Garry's Mod; tracking updates only while the game is foreground. Borderless fullscreen is recommended.",
+            "Оверлей включён. Переключитесь в Garry's Mod: углы обновляются, только когда игра на переднем плане. Рекомендуется безрамочный полноэкранный режим."));
         syncOverlay();
     }
 
