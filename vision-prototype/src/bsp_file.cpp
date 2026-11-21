@@ -73,6 +73,13 @@ bool isSkyTexture(const QString &materialName) {
            name.startsWith(QStringLiteral("sky_"));
 }
 
+bool isToolTriggerTexture(const QString &materialName) {
+    const QString name = materialName.trimmed().toLower().replace(QLatin1Char('\\'), QLatin1Char('/'));
+    // Trigger volumes are invisible gameplay helpers, not renderable map geometry.
+    return name == QStringLiteral("tools/toolstrigger") ||
+           name.startsWith(QStringLiteral("tools/toolstrigger/"));
+}
+
 } // namespace
 
 void BspFile::clear() {
@@ -481,6 +488,11 @@ QVector<BspPolygon> BspFile::facePolygons(bool includeSkySurfaces) const {
 
     for (qsizetype faceIndex = 0; faceIndex < faces_.size(); ++faceIndex) {
         const BspFace &face = faces_[faceIndex];
+        // Exclude trigger-tool faces unconditionally. Some maps contain enormous
+        // TOOLS/TOOLSTRIGGER polygons that otherwise dominate the preview and make
+        // the whole level look like a box. Unlike sky surfaces, these are never useful
+        // as visible geometry, even when includeSkySurfaces is true.
+        if (isToolTriggerTexture(face.materialName)) continue;
         if (face.skySurface && !includeSkySurfaces) continue;
         if (faceIndex < displacementFacePresent_.size() && displacementFacePresent_[faceIndex] != 0) {
             const auto &triangles = displacementPolygonsByFace_[faceIndex];
