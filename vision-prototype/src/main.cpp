@@ -14,6 +14,7 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QHash>
 #include <QLocale>
 #include <QMenu>
@@ -597,6 +598,11 @@ private:
             landmarkPickMode_ = false;
             landmarkPosition_ = QVector3D();
             if (mapView_) mapView_->setWorldLandmark(0.0, 0.0, false);
+            if (!targetDefined_ || !trajectoryCalculated_) {
+                if (overlay_) overlay_->hide();
+            }
+            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            settings.remove(landmarkSettingsKey_);
             syncOverlay();
             if (landmarkStatusLabel_) landmarkStatusLabel_->setText(
                 bspvision::uiText("No aiming landmark set. Pick a point on the BSP map.", "Круг-ориентир не задан. Выберите точку на карте BSP."));
@@ -607,6 +613,13 @@ private:
             if (!hasLandmark_) return;
             landmarkPosition_.setZ(static_cast<float>(z));
             if (mapView_) mapView_->setWorldLandmark(landmarkPosition_.x(), landmarkPosition_.y(), true);
+            QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            settings.beginGroup(landmarkSettingsKey_);
+            settings.setValue(QStringLiteral("valid"), true);
+            settings.setValue(QStringLiteral("x"), landmarkPosition_.x());
+            settings.setValue(QStringLiteral("y"), landmarkPosition_.y());
+            settings.setValue(QStringLiteral("z"), landmarkPosition_.z());
+            settings.endGroup();
             syncOverlay();
         });
 
@@ -671,11 +684,22 @@ private:
                 return;
             }
             loadedMapName_ = QFileInfo(path).completeBaseName();
-            hasLandmark_ = false;
+            const QString absoluteMapPath = QFileInfo(path).absoluteFilePath();
+            landmarkSettingsKey_ = QStringLiteral("landmarks/") +
+                QString::fromLatin1(QCryptographicHash::hash(
+                    absoluteMapPath.toUtf8(), QCryptographicHash::Sha256).toHex());
+            QSettings landmarkSettings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+            landmarkSettings.beginGroup(landmarkSettingsKey_);
+            hasLandmark_ = landmarkSettings.value(QStringLiteral("valid"), false).toBool();
+            landmarkPosition_ = hasLandmark_
+                ? QVector3D(landmarkSettings.value(QStringLiteral("x"), 0.0).toFloat(),
+                            landmarkSettings.value(QStringLiteral("y"), 0.0).toFloat(),
+                            landmarkSettings.value(QStringLiteral("z"), 0.0).toFloat())
+                : QVector3D();
+            landmarkSettings.endGroup();
             landmarkTrackingEnabled_ = false;
             landmarkPickMode_ = false;
-            landmarkPosition_ = QVector3D();
-            if (landmarkZ_) landmarkZ_->setValue(0.0);
+            if (landmarkZ_) landmarkZ_->setValue(hasLandmark_ ? landmarkPosition_.z() : 0.0);
             heightfield_.clear();
             heightfieldVisible_ = false;
             collisionBvh_.clear();
@@ -705,6 +729,13 @@ private:
                 landmarkPosition_ = QVector3D(static_cast<float>(x), static_cast<float>(y),
                                                static_cast<float>(z));
                 hasLandmark_ = true;
+                QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+                settings.beginGroup(landmarkSettingsKey_);
+                settings.setValue(QStringLiteral("valid"), true);
+                settings.setValue(QStringLiteral("x"), landmarkPosition_.x());
+                settings.setValue(QStringLiteral("y"), landmarkPosition_.y());
+                settings.setValue(QStringLiteral("z"), landmarkPosition_.z());
+                settings.endGroup();
                 if (mapView_) mapView_->setWorldLandmark(x, y, true);
                 if (landmarkStatusLabel_) landmarkStatusLabel_->setText(
                     bspvision::uiText("Aiming landmark: X=%1, Y=%2, Z=%3. Press F7 to show/hide the live circle.",
@@ -1395,6 +1426,7 @@ private:
     QString collisionBvhError_;
     bspvision::LiveOverlay *overlay_ = nullptr;
     QString loadedMapName_;
+    QString landmarkSettingsKey_;
     QVector3D landmarkPosition_;
     int pickMode_ = 0;
     bool targetDefined_ = false;
