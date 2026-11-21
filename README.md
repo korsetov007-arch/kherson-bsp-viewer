@@ -18,7 +18,7 @@ See [the desktop application README](vision-prototype/README.md) for prerequisit
 ## User manual
 
 - [Bilingual manual (Markdown)](docs/USER_MANUAL.md)
-- A PDF version is provided separately with this project release/conversation deliverable.
+- A bilingual PDF user manual is available as a downloadable project companion.
 
 ## Browser viewer
 
