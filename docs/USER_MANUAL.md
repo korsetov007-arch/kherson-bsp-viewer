@@ -34,10 +34,10 @@
 
 1. Перейдите на вкладку **Баллистика**.
 2. Введите X/Y/Z точки запуска и цели. Кнопка **Выбрать X/Y на карте…** возвращает к виду сверху, чтобы выбрать горизонтальные координаты; Z остаётся ручным.
-3. Настройте скорость (единиц в секунду), гравитацию (единиц в секунду²), азимут, угол возвышения и время полёта.
-4. **Рассчитать текущую дугу** строит траекторию с введёнными параметрами.
-5. **Решить для цели · низкая дуга** и **… высокая дуга** вычисляют идеальный угол, если цель достижима в выбранной модели.
-6. **Очистить траекторию** убирает текущую кривую.
+3. Для БМ-30 можно нажать **«БМ-30 · оценка HUD (4000 / 600)»**: 4000 ед./с взято из строки `Attachment.Ang:Forward() * 4000` в HUD аддона, а 600 — стандартное значение `sv_gravity` в Garry's Mod. Это **не подтверждённая скорость самой управляемой ракеты**; её параметры находятся во внешней сущности `sw_rocket_9m528_v3`.
+4. Уточните гравитацию по `physenv.GetGravity()` для вашего сервера, если `sv_gravity` изменён. Настройте опорную скорость, азимут, угол возвышения и время полёта.
+5. При включённом авторасчёте приложение задаёт прямой азимут между точками и выбирает низкую дугу с минимальным временем. Если геометрия BSP перекрывает её, приложение пробует высокую дугу. **Рассчитать текущую дугу** использует введённые углы вручную; **Решить для цели** пересчитывает решение.
+6. **Очистить траекторию** убирает текущую кривую и маркер баллистической наводки.
 
 Цвета: зелёный — запуск, красный — цель, янтарный — траектория.
 
@@ -46,7 +46,7 @@
 - Поддерживается только BSP v20.
 - 3D-просмотр — программная перспективная отрисовка полигонов с per-pixel depth buffer и упрощённым направленным освещением; текстуры и оригинальный свет Source не используются. Статистика в заголовке позволяет отличить отсутствие геометрии от её перекрытия по глубине. Двойной щелчок сбрасывает положение камеры.
 - Если sky-плоскости остаются, включите флажок и выключите обратно для сравнения; проверьте имена материалов или приложите карту для расширения правил определения.
-- Баллистика не учитывает столкновения, препятствия, сопротивление воздуха, взрывной радиус и поведение конкретного оружия. Результаты — только визуальный ориентир; приложение не управляет игрой.
+- Баллистика не моделирует управляемость `sw_rocket_9m528_v3`, её фактическую скорость, сопротивление воздуха или физику внешнего аддона. Значение 4000 — лишь скорость HUD-предсказателя, а не доказанная скорость ракеты. Проверка препятствий использует только BSP-треугольники, без пропов и коллизий движка. Результаты — визуальный ориентир; приложение не управляет игрой.
 - Если цель не имеет решения, увеличьте скорость, уменьшите гравитацию или выберите более близкую цель.
 
 # English
@@ -81,10 +81,10 @@ Enable the checkbox when you want to inspect those surfaces. If a huge plane rem
 
 1. Open **Ballistic lab**.
 2. Enter the launch and target X/Y/Z. **Pick XY on map…** switches to the top-down map so you can select X/Y; enter Z manually.
-3. Set speed (units/s), gravity (units/s²), yaw/azimuth, elevation and flight time.
-4. **Calculate current arc** draws a trajectory from the current values.
-5. **Solve target · low arc** or **Solve target · high arc** calculates an ideal elevation angle when the target is reachable under the selected model.
-6. **Clear path** removes the current curve.
+3. For the BM-30, you can choose **“BM-30 · HUD estimate (4000 / 600)”**. The 4000 units/s value comes from the addon's `Attachment.Ang:Forward() * 4000` HUD preview; 600 is the stock Garry's Mod `sv_gravity` value. This is **not a confirmed launch speed for the guided missile**; its parameters are defined in the external `sw_rocket_9m528_v3` entity.
+4. Check `physenv.GetGravity()` for your server and adjust gravity if `sv_gravity` was changed. Set the reference speed, azimuth, elevation and flight time as needed.
+5. With Auto-solve enabled, the app computes the direct XY azimuth and chooses the low-time ballistic arc. If BSP geometry blocks it, the high arc is tried. **Calculate current arc** uses manually entered angles; **Solve target** recomputes the solution.
+6. **Clear path** removes the trajectory and ballistic aim marker.
 
 Colors: green = launch, red = target, amber = trajectory.
 
@@ -93,7 +93,7 @@ Colors: green = launch, red = target, amber = trajectory.
 - Only Source BSP v20 is supported.
 - The 3D view is a lightweight perspective polygon preview without Source textures, lighting or a full Z-buffer. Double-click to reset the camera.
 - If sky planes persist, toggle **Show skybox surfaces** to compare; material-name rules may need to be extended for the particular BSP.
-- Ballistics do not include collisions, map occlusion, air drag, splash radius or weapon-specific behavior. The trajectory is a visual reference; the app does not control the game.
+- The model does not simulate `sw_rocket_9m528_v3` guidance, its actual speed, air drag or the external addon's physics. The value 4000 is only the HUD predictor speed, not a verified rocket speed. Obstruction checks use BSP triangles only, not props or engine collision. Results are visual references; the app does not control the game.
 - If the solver reports no solution, increase speed, reduce gravity or select a closer target.
 
 
