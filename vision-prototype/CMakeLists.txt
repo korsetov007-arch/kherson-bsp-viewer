@@ -17,18 +17,20 @@ qt_add_executable(bsp-geometry
     src/bsp_3d_view.cpp
     src/ballistics_view.cpp
     src/live_overlay.cpp
+    src/cl_showpos_reader.cpp
     include/app_language.hpp
     include/bsp_file.hpp
     include/bsp_map_view.hpp
     include/bsp_3d_view.hpp
     include/ballistics_view.hpp
     include/live_overlay.hpp
+    include/cl_showpos_reader.hpp
 )
 
 target_include_directories(bsp-geometry PRIVATE include)
-target_link_libraries(bsp-geometry PRIVATE Qt6::Widgets Qt6::Network)
+target_link_libraries(bsp-geometry PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
 if(WIN32)
-    target_link_libraries(bsp-geometry PRIVATE user32)
+    target_link_libraries(bsp-geometry PRIVATE user32 d3d11 dxgi)
 endif()
 
 if(MSVC)
@@ -51,4 +53,21 @@ if(BUILD_TESTING)
         target_compile_options(bsp-parser-tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME bsp-parser-tests COMMAND bsp-parser-tests)
+
+    add_executable(cl-showpos-tests
+        tests/cl_showpos_reader_tests.cpp
+        src/cl_showpos_reader.cpp
+        include/cl_showpos_reader.hpp
+    )
+    target_include_directories(cl-showpos-tests PRIVATE include)
+    target_link_libraries(cl-showpos-tests PRIVATE Qt6::Core Qt6::Gui)
+    if(WIN32)
+        target_link_libraries(cl-showpos-tests PRIVATE d3d11 dxgi)
+    endif()
+    if(MSVC)
+        target_compile_options(cl-showpos-tests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(cl-showpos-tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME cl-showpos-tests COMMAND cl-showpos-tests)
 endif()
