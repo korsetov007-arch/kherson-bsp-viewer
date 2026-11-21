@@ -9,8 +9,8 @@
 - Skybox-material detection with a toggle to show/hide sky-textured faces.
 - Russian/English interface with a persistent language setting.
 - Offline projectile-trajectory visualization with low/high ballistic-angle solving.
-- Optional live bridge for Garry's Mod: Qt local named pipe, native Lua binary module, LVS telemetry adapter and in-game HUD marker (requires clientside Lua/module loading to be permitted).
-- No OpenCV or computer-vision dependency in the native desktop app.
+- Optional Native Bridge for Garry's Mod, plus an experimental Tier B `cl_showpos` fallback using DXGI screen capture and classic pixel-template matching.
+- No OpenCV, OCR engine or neural-network model is required for the native desktop app.
 
 ## Native Windows app
 
@@ -30,4 +30,4 @@ The native bridge source and setup are documented in [gmod-addon/native-bridge/R
 
 ## Technical scope
 
-The native parser currently supports Source BSP v20. It reconstructs face outlines from BSP geometry and uses material metadata to hide common skybox faces by default. It is not a full Source-engine renderer: textures, lighting, visibility, and engine-specific effects are not recreated. The ballistic lab is an ideal constant-gravity planning aid and does not control a game.
+The native parser currently supports Source BSP v20. It reconstructs face outlines from BSP geometry and uses material metadata to hide common skybox faces by default. It is not a full Source-engine renderer: textures, lighting, visibility, displacement terrain and engine-specific collision are not yet reconstructed. The ballistic lab is an ideal constant-gravity planning aid and does not control a game. The `cl_showpos` fallback is experimental, captures a crop from the primary display, and has not yet been validated with an actual GMod capture; the displayed view origin is not guaranteed to be the muzzle position.
