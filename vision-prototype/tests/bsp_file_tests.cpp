@@ -250,7 +250,7 @@ int main(int argc, char **argv) {
     bspvision::Heightfield heightfield;
     if (!heightfield.build(terrain, 8.0, 64, &error)) {
         std::cerr << "FAIL: reconstructed displacement did not rasterize into heightfield: "
-                  << error.toStdString() << '\\n';
+                  << error.toStdString() << '\n';
         return 1;
     }
     if (!heightfield.isValid() || heightfield.coveredCellCount() < 100)
@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
     bspvision::BspFile untagged;
     if (!untagged.load(untaggedPath, &error)) {
         std::cerr << "FAIL: untagged displacement BSP was rejected: "
-                  << error.toStdString() << '\\n';
+                  << error.toStdString() << '\n';
         return 1;
     }
     if (untagged.displacementCount() != 1 || untagged.displacementTriangleCount() != 32 ||
