@@ -61,7 +61,6 @@ public:
         rawInputReady_ = mouseTracker_.initialize(reinterpret_cast<quintptr>(winId()));
         mouseTracker_.anglesChanged = [this](double yaw, double pitch) {
             if (overlay_) overlay_->setCurrentAngles(yaw, pitch);
-            syncOverlay();
         };
         overlayTimer_ = new QTimer(this);
         connect(overlayTimer_, &QTimer::timeout, this, [this] { syncOverlay(); });
@@ -122,6 +121,9 @@ private:
         const double tx = value(targetX_, 512.0), ty = value(targetY_, 0.0), tz = value(targetZ_, 32.0);
         const double speed = value(speed_, 1000.0), gravity = value(gravity_, 800.0);
         const double yaw = value(yaw_, 0.0), pitch = value(pitch_, 25.0), flight = value(flightTime_, 2.0);
+        const double initialYaw = value(currentYawInit_, 0.0), initialPitch = value(currentPitchInit_, 0.0);
+        const double sensitivity = value(sensitivity_, 3.0), mYaw = value(mYaw_, 0.022), mPitch = value(mPitch_, 0.022);
+        const double overlayFov = value(overlayFov_, 90.0);
         const int previousTab = tabs_ ? tabs_->currentIndex() : 0;
         const bool hadTrajectory = trajectoryCalculated_;
 
@@ -150,6 +152,9 @@ private:
         targetX_->setValue(tx); targetY_->setValue(ty); targetZ_->setValue(tz);
         speed_->setValue(speed); gravity_->setValue(gravity);
         yaw_->setValue(yaw); pitch_->setValue(pitch); flightTime_->setValue(flight);
+        currentYawInit_->setValue(initialYaw); currentPitchInit_->setValue(initialPitch);
+        sensitivity_->setValue(sensitivity); mYaw_->setValue(mYaw); mPitch_->setValue(mPitch);
+        overlayFov_->setValue(overlayFov);
 
         updateSettingsMenuText();
         setWindowTitle(bspvision::uiText("Source BSP Geometry Lab", "Source BSP: Геометрия и баллистика"));
@@ -327,12 +332,15 @@ private:
                 .arg(x, 0, 'f', 2).arg(y, 0, 'f', 2));
             if (pickMode_ == 1) {
                 originX_->setValue(x); originY_->setValue(y);
+                trajectoryCalculated_ = false;
                 pickMode_ = 0;
                 statusBar()->showMessage(bspvision::uiText("Launch point set from map. Set launch Z manually.", "Точка запуска выбрана на карте. Укажите Z вручную."));
             } else if (pickMode_ == 2) {
                 targetX_->setValue(x); targetY_->setValue(y);
                 targetDefined_ = true;
+                trajectoryCalculated_ = false;
                 pickMode_ = 0;
+                syncOverlay();
                 statusBar()->showMessage(bspvision::uiText("Target point set from map. Set target Z manually if needed.", "Цель выбрана на карте. При необходимости укажите Z вручную."));
             }
         };
@@ -607,6 +615,7 @@ private:
         const auto angleMatch = angleRe.match(clipboard);
         bool gotAnything = false;
         if (positionMatch.hasMatch()) {
+            trajectoryCalculated_ = false;
             originX_->setValue(positionMatch.captured(1).toDouble());
             originY_->setValue(positionMatch.captured(2).toDouble());
             originZ_->setValue(positionMatch.captured(3).toDouble());
