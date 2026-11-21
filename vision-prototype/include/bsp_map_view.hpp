@@ -2,6 +2,7 @@
 
 #include "bsp_file.hpp"
 
+#include <QImage>
 #include <QPointF>
 #include <QRectF>
 #include <QWidget>
@@ -15,6 +16,8 @@ public:
     explicit BspMapView(QWidget *parent = nullptr);
 
     void setMap(const QVector<BspVertex> &vertices, const QVector<BspPolygon> &polygons);
+    void setHeightfield(const QImage &hillshade, const QRectF &worldBounds);
+    void setHeightfieldVisible(bool visible);
     void clearMap();
 
     std::function<void(double, double)> pointSelected;
@@ -30,6 +33,9 @@ private:
 
     QVector<BspVertex> vertices_;
     QVector<BspPolygon> polygons_;
+    QImage heightfieldImage_;
+    QRectF heightfieldWorldBounds_;
+    bool heightfieldVisible_ = false;
     QPointF selectedWorld_;
     bool hasSelection_ = false;
     double minX_ = 0.0;
