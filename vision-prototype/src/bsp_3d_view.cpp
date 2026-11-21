@@ -246,8 +246,8 @@ void Bsp3DView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPoly
               .arg(dispMinZ, 0, 'f', 0).arg(dispMaxZ, 0, 'f', 0)
         : QStringLiteral("none");
     setToolTip(uiText(
-        "BSP face bounds: %1\\nDisplacement bounds: %2",
-        "Границы BSP faces: %1\\nГраницы displacement: %2")
+        "BSP face bounds: %1\nDisplacement bounds: %2",
+        "Границы BSP faces: %1\nГраницы displacement: %2")
         .arg(faceBoundsText, displacementBoundsText));
 
     if (!haveBounds) {
