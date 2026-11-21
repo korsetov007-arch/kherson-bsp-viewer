@@ -1117,6 +1117,7 @@ private:
             screenReaderEnabledCheck_->setChecked(false);
             return; // The toggled handler performs the stop.
         }
+        landmarkTrackingEnabled_ = false;
         if (screenCaptureTimer_) screenCaptureTimer_->stop();
         screenReader_.stop();
         if (screenReaderStatusLabel_) screenReaderStatusLabel_->setText(screenReader_.lastStatus());
@@ -1324,6 +1325,7 @@ private:
     }
 
     void stopExternalOverlay() {
+        landmarkTrackingEnabled_ = false;
         if (overlay_) overlay_->hide();
         syncOverlay();
     }
