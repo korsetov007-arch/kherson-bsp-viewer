@@ -373,12 +373,12 @@ private:
                         cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
         QString summary = QStringLiteral(
             "ORB baseline — keypoints: reference %1, screenshot %2; ratio-test matches: %3.")
-            .arg(refPoints.size()).arg(curPoints.size()).arg(good.size());
+            .arg(static_cast<int>(refPoints.size())).arg(static_cast<int>(curPoints.size())).arg(static_cast<int>(good.size()));
         if (homographyFound) {
             summary += QStringLiteral(
                 " RANSAC homography inliers: %1/%2. This rejects many inconsistent matches, "
                 "but it is not a 3D camera-pose estimate.")
-                .arg(inlierCount).arg(good.size());
+                .arg(inlierCount).arg(static_cast<int>(good.size()));
         } else {
             summary += QStringLiteral(
                 " No stable planar homography found. This can happen when there are too few matches "
