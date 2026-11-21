@@ -219,6 +219,7 @@ private:
         populateLumpTable();
         if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
         if (heightfieldCheck_) heightfieldCheck_->setEnabled(true);
+        if (contourIntervalCombo_) contourIntervalCombo_->setEnabled(true);
         coordinateLabel_->setText(bspvision::uiText(
             "Click the map preview to inspect XY coordinates. Z is ambiguous because maps can contain multiple floors. Sky-textured faces are hidden by default.",
             "Нажмите на карту, чтобы выбрать X/Y. Координата Z неоднозначна из-за нескольких этажей. Поверхности с sky-материалами скрыты по умолчанию."));
