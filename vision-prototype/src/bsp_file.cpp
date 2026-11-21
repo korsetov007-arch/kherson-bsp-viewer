@@ -88,6 +88,13 @@ void BspFile::clear() {
     displacementFacePresent_.clear();
     displacementCount_ = 0;
     displacementTriangleCount_ = 0;
+    displacementVertexCount_ = 0;
+    displacementTriangleRecordCount_ = 0;
+    displacementTriangleSurfaceTagCount_ = 0;
+    displacementTriangleZeroTagCount_ = 0;
+    displacementTriangleRemovedCount_ = 0;
+    displacementFallbackSurfaceCount_ = 0;
+    displacementPowerCounts_.fill(0);
     for (int i = 0; i < LumpCount; ++i) lumps_[static_cast<size_t>(i)] = {};
 }
 
@@ -328,6 +335,10 @@ bool BspFile::load(const QString &path, QString *error) {
             return false;
         }
 
+        ++displacementPowerCounts_[static_cast<size_t>(power - 2)];
+        displacementVertexCount_ += vertexCount;
+        displacementTriangleRecordCount_ += triangleCount;
+
         if (static_cast<quint32>(faceIndex) >= static_cast<quint32>(faces_.size())) continue;
         const BspFace &baseFace = faces_[faceIndex];
         if (baseFace.displacementInfo != dispIndex || baseFace.edgeCount != 4) continue;
@@ -403,6 +414,26 @@ bool BspFile::load(const QString &path, QString *error) {
             }
         }
 
+        // Triangle tags describe surface/physics properties, but some valid BSPs
+        // leave the SURFACE bit clear for every triangle. In that case, don't
+        // drop the entire displacement: keep every triangle not explicitly marked
+        // REMOVE. If SURFACE is present anywhere, honour it alongside REMOVE.
+        QVector<quint16> triangleTags;
+        triangleTags.reserve(triangleCount);
+        qint32 surfaceTaggedTriangles = 0;
+        for (qint32 triIndex = 0; triIndex < triangleCount; ++triIndex) {
+            const uchar *triData = data + dispTriLump.offset +
+                static_cast<qint64>(triStart + triIndex) * 2;
+            const quint16 tags = readU16(triData);
+            triangleTags.push_back(tags);
+            if ((tags & kDispTriSurface) != 0) ++surfaceTaggedTriangles;
+            if (tags == 0) ++displacementTriangleZeroTagCount_;
+            if ((tags & kDispTriSurface) != 0) ++displacementTriangleSurfaceTagCount_;
+            if ((tags & kDispTriRemove) != 0) ++displacementTriangleRemovedCount_;
+        }
+        const bool useSurfaceTagFilter = surfaceTaggedTriangles > 0;
+        if (!useSurfaceTagFilter) ++displacementFallbackSurfaceCount_;
+
         auto &renderTriangles = displacementPolygonsByFace_[faceIndex];
         displacementFacePresent_[faceIndex] = 1;
         for (qint32 row = 0; row < divisions; ++row) {
@@ -412,13 +443,15 @@ bool BspFile::load(const QString &path, QString *error) {
                 const qint32 c = a + side;
                 const qint32 d = c + 1;
                 const qint32 firstTri = (row * divisions + col) * 2;
-                const qint32 triIndices[2][3] = {{a, b, c}, {b, d, c}};
+                // Grid row follows p00 -> p10 and column follows p00 -> p01.
+                // Keep triangle winding aligned with the parent BSP face so
+                // upward-facing terrain is also accepted by the heightfield rasterizer.
+                const qint32 triIndices[2][3] = {{a, c, b}, {b, c, d}};
                 for (qint32 half = 0; half < 2; ++half) {
                     const qint32 triIndex = firstTri + half;
-                    const uchar *triData = data + dispTriLump.offset +
-                        static_cast<qint64>(triStart + triIndex) * 2;
-                    const quint16 tags = readU16(triData);
-                    if ((tags & kDispTriSurface) == 0 || (tags & kDispTriRemove) != 0) continue;
+                    const quint16 tags = triangleTags[triIndex];
+                    if ((tags & kDispTriRemove) != 0) continue;
+                    if (useSurfaceTagFilter && (tags & kDispTriSurface) == 0) continue;
 
                     BspPolygon triangle;
                     triangle.materialName = baseFace.materialName;
@@ -503,12 +536,18 @@ QString BspFile::summary() const {
         "Format: Source BSP v%2 | Size: %3 MiB\n"
         "Vertices: %4 | Edges: %5 | Surf edges: %6\n"
         "Faces in lump: %7 | Visible polygons (sky surfaces hidden): %8 | Sky faces: %9\n"
-        "Triangulated visible surface: %10 triangles\nDisplacements: %11 | Displacement triangles: %12",
+        "Triangulated visible surface: %10 triangles\n"
+        "Displacements: %11 | Displacement vertices: %12 | DispTri records: %13\n"
+        "Displacement triangles rendered: %14 | SURFACE-tagged: %15 | zero-tag: %16 | REMOVE-tagged: %17 | untagged fallback surfaces: %18\n"
+        "Displacement power: p2=%19, p3=%20, p4=%21",
         "Файл: %1\n"
         "Формат: Source BSP v%2 | Размер: %3 МиБ\n"
         "Вершины: %4 | Рёбра: %5 | Направленные рёбра: %6\n"
         "Граней в lump: %7 | Видимых полигонов (без скайбокса): %8 | Граней sky-материалов: %9\n"
-        "Треугольников всей видимой поверхности: %10\nDisplacement-поверхностей: %11 | Треугольников displacement: %12")
+        "Треугольников всей видимой поверхности: %10\n"
+        "Displacement-поверхностей: %11 | Вершин displacement: %12 | Записей DispTri: %13\n"
+        "Треугольников displacement отрисовано: %14 | с SURFACE: %15 | с нулевым тегом: %16 | с REMOVE: %17 | поверхностей с fallback: %18\n"
+        "Распределение power: p2=%19, p3=%20, p4=%21")
         .arg(filePath_)
         .arg(version_)
         .arg(static_cast<double>(fileSize()) / (1024.0 * 1024.0), 0, 'f', 2)
@@ -520,6 +559,15 @@ QString BspFile::summary() const {
         .arg(skyFaceCount())
         .arg(totalSurfaceTriangles)
         .arg(displacementCount_)
-        .arg(displacementTriangleCount_);
+        .arg(displacementVertexCount_)
+        .arg(displacementTriangleRecordCount_)
+        .arg(displacementTriangleCount_)
+        .arg(displacementTriangleSurfaceTagCount_)
+        .arg(displacementTriangleZeroTagCount_)
+        .arg(displacementTriangleRemovedCount_)
+        .arg(displacementFallbackSurfaceCount_)
+        .arg(displacementPowerCounts_[0])
+        .arg(displacementPowerCounts_[1])
+        .arg(displacementPowerCounts_[2]);
 }
 } // namespace bspvision
