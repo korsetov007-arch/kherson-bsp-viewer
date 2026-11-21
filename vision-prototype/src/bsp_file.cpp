@@ -83,6 +83,10 @@ void BspFile::clear() {
     edges_.clear();
     surfEdges_.clear();
     faces_.clear();
+    displacementPolygonsByFace_.clear();
+    displacementFacePresent_.clear();
+    displacementCount_ = 0;
+    displacementTriangleCount_ = 0;
     for (int i = 0; i < LumpCount; ++i) lumps_[static_cast<size_t>(i)] = {};
 }
 
@@ -251,6 +255,185 @@ bool BspFile::load(const QString &path, QString *error) {
         faces_.push_back(face);
     }
 
+    const auto &dispInfoLump = lumps_[26];
+    const auto &dispVertLump = lumps_[33];
+    const auto &dispTriLump = lumps_[48];
+    if ((dispInfoLump.length % 176) != 0 ||
+        (dispVertLump.length % 20) != 0 ||
+        (dispTriLump.length % 2) != 0) {
+        if (error) *error = uiText(
+            "Displacement lumps have unexpected record sizes.",
+            "Некорректные размеры записей displacement-lump.");
+        clear();
+        return false;
+    }
+
+    displacementPolygonsByFace_.resize(faces_.size());
+    displacementFacePresent_.fill(0, faces_.size());
+
+    const auto resolveFaceVertices = [this](const BspFace &face,
+                                            QVector<BspVertex> *out) -> bool {
+        if (!out || face.edgeCount < 3 || face.edgeCount > 4096 || face.firstEdge < 0)
+            return false;
+        const qint64 edgeEnd = static_cast<qint64>(face.firstEdge) + face.edgeCount;
+        if (edgeEnd > surfEdges_.size()) return false;
+        out->clear();
+        out->reserve(face.edgeCount);
+        for (qint32 i = 0; i < face.edgeCount; ++i) {
+            const qint32 signedEdge = surfEdges_[face.firstEdge + i];
+            const qint64 edgeIndex = signedEdge < 0 ? -static_cast<qint64>(signedEdge) : signedEdge;
+            if (edgeIndex < 0 || edgeIndex >= edges_.size()) return false;
+            const BspEdge &edge = edges_[static_cast<qsizetype>(edgeIndex)];
+            const quint16 vertexIndex = signedEdge < 0 ? edge.second : edge.first;
+            if (vertexIndex >= vertices_.size()) return false;
+            out->push_back(vertices_[vertexIndex]);
+        }
+        return out->size() >= 3;
+    };
+
+    const qint32 dispVertRecordCount = dispVertLump.length / 20;
+    const qint32 dispTriRecordCount = dispTriLump.length / 2;
+    const qint32 dispInfoRecordCount = dispInfoLump.length / 176;
+    constexpr quint16 kDispTriSurface = 1U << 0;
+    constexpr quint16 kDispTriRemove = 1U << 5;
+
+    for (qint32 dispIndex = 0; dispIndex < dispInfoRecordCount; ++dispIndex) {
+        const uchar *info = data + dispInfoLump.offset + static_cast<qint64>(dispIndex) * 176;
+        const qint32 vertStart = readI32(info + 12);
+        const qint32 triStart = readI32(info + 16);
+        const qint32 power = readI32(info + 20);
+        const quint16 faceIndex = readU16(info + 36);
+
+        if (power < 2 || power > 4) {
+            if (error) *error = uiText(
+                "Displacement %1 has unsupported power %2; expected 2–4.",
+                "Displacement %1 имеет неподдерживаемый power %2; ожидался диапазон 2–4.")
+                .arg(dispIndex).arg(power);
+            clear();
+            return false;
+        }
+
+        const qint32 divisions = 1 << power;
+        const qint32 side = divisions + 1;
+        const qint32 vertexCount = side * side;
+        const qint32 triangleCount = divisions * divisions * 2;
+        if (vertStart < 0 || static_cast<qint64>(vertStart) + vertexCount > dispVertRecordCount ||
+            triStart < 0 || static_cast<qint64>(triStart) + triangleCount > dispTriRecordCount) {
+            if (error) *error = uiText(
+                "Displacement %1 references vertices or triangles outside their lumps.",
+                "Displacement %1 ссылается на вершины или треугольники за пределами lump.")
+                .arg(dispIndex);
+            clear();
+            return false;
+        }
+
+        if (faceIndex >= static_cast<quint16>(faces_.size())) continue;
+        const BspFace &baseFace = faces_[faceIndex];
+        if (baseFace.displacementInfo != dispIndex || baseFace.edgeCount != 4) continue;
+
+        QVector<BspVertex> corners;
+        if (!resolveFaceVertices(baseFace, &corners) || corners.size() != 4) continue;
+
+        const double startX = readF32(info);
+        const double startY = readF32(info + 4);
+        const double startZ = readF32(info + 8);
+        if (!std::isfinite(startX) || !std::isfinite(startY) || !std::isfinite(startZ)) {
+            if (error) *error = uiText(
+                "Displacement %1 has a non-finite start position.",
+                "Displacement %1 содержит некорректную стартовую позицию.").arg(dispIndex);
+            clear();
+            return false;
+        }
+
+        int startCorner = 0;
+        double bestDistanceSquared = std::numeric_limits<double>::max();
+        for (int i = 0; i < corners.size(); ++i) {
+            const double dx = corners[i].x - startX;
+            const double dy = corners[i].y - startY;
+            const double dz = corners[i].z - startZ;
+            const double distanceSquared = dx * dx + dy * dy + dz * dz;
+            if (distanceSquared < bestDistanceSquared) {
+                bestDistanceSquared = distanceSquared;
+                startCorner = i;
+            }
+        }
+        if (bestDistanceSquared > 1.0) continue;
+
+        const BspVertex &p00 = corners[startCorner];
+        const BspVertex &p10 = corners[(startCorner + 1) % 4];
+        const BspVertex &p11 = corners[(startCorner + 2) % 4];
+        const BspVertex &p01 = corners[(startCorner + 3) % 4];
+
+        QVector<BspVertex> grid;
+        grid.resize(vertexCount);
+        for (qint32 row = 0; row < side; ++row) {
+            const double s = static_cast<double>(row) / divisions;
+            for (qint32 col = 0; col < side; ++col) {
+                const double t = static_cast<double>(col) / divisions;
+                const double w00 = (1.0 - s) * (1.0 - t);
+                const double w10 = (1.0 - s) * t;
+                const double w11 = s * t;
+                const double w01 = s * (1.0 - t);
+                const double baseX = w00 * p00.x + w10 * p10.x + w11 * p11.x + w01 * p01.x;
+                const double baseY = w00 * p00.y + w10 * p10.y + w11 * p11.y + w01 * p01.y;
+                const double baseZ = w00 * p00.z + w10 * p10.z + w11 * p11.z + w01 * p01.z;
+
+                const qint32 vertexIndex = row * side + col;
+                const uchar *dispVert = data + dispVertLump.offset +
+                    static_cast<qint64>(vertStart + vertexIndex) * 20;
+                const double vectorX = readF32(dispVert);
+                const double vectorY = readF32(dispVert + 4);
+                const double vectorZ = readF32(dispVert + 8);
+                const double distance = readF32(dispVert + 12);
+                if (!std::isfinite(vectorX) || !std::isfinite(vectorY) ||
+                    !std::isfinite(vectorZ) || !std::isfinite(distance)) {
+                    if (error) *error = uiText(
+                        "Displacement %1 contains a non-finite displacement vertex.",
+                        "Displacement %1 содержит некорректную вершину.").arg(dispIndex);
+                    clear();
+                    return false;
+                }
+
+                grid[vertexIndex] = {
+                    static_cast<float>(baseX + vectorX * distance),
+                    static_cast<float>(baseY + vectorY * distance),
+                    static_cast<float>(baseZ + vectorZ * distance)
+                };
+            }
+        }
+
+        auto &renderTriangles = displacementPolygonsByFace_[faceIndex];
+        displacementFacePresent_[faceIndex] = 1;
+        for (qint32 row = 0; row < divisions; ++row) {
+            for (qint32 col = 0; col < divisions; ++col) {
+                const qint32 a = row * side + col;
+                const qint32 b = a + 1;
+                const qint32 c = a + side;
+                const qint32 d = c + 1;
+                const qint32 firstTri = (row * divisions + col) * 2;
+                const qint32 triIndices[2][3] = {{a, b, c}, {b, d, c}};
+                for (qint32 half = 0; half < 2; ++half) {
+                    const qint32 triIndex = firstTri + half;
+                    const uchar *triData = data + dispTriLump.offset +
+                        static_cast<qint64>(triStart + triIndex) * 2;
+                    const quint16 tags = readU16(triData);
+                    if ((tags & kDispTriSurface) == 0 || (tags & kDispTriRemove) != 0) continue;
+
+                    BspPolygon triangle;
+                    triangle.materialName = baseFace.materialName;
+                    triangle.skySurface = baseFace.skySurface;
+                    triangle.vertices.reserve(3);
+                    triangle.vertices.push_back(grid[triIndices[half][0]]);
+                    triangle.vertices.push_back(grid[triIndices[half][1]]);
+                    triangle.vertices.push_back(grid[triIndices[half][2]]);
+                    renderTriangles.push_back(std::move(triangle));
+                    ++displacementTriangleCount_;
+                }
+            }
+        }
+        ++displacementCount_;
+    }
+
     filePath_ = path;
     loaded_ = true;
     return true;
@@ -259,10 +442,16 @@ bool BspFile::load(const QString &path, QString *error) {
 QVector<BspPolygon> BspFile::facePolygons(bool includeSkySurfaces) const {
     QVector<BspPolygon> result;
     if (!loaded_) return result;
-    result.reserve(faces_.size());
+    result.reserve(faces_.size() + displacementTriangleCount_);
 
-    for (const BspFace &face : faces_) {
+    for (qsizetype faceIndex = 0; faceIndex < faces_.size(); ++faceIndex) {
+        const BspFace &face = faces_[faceIndex];
         if (face.skySurface && !includeSkySurfaces) continue;
+        if (faceIndex < displacementFacePresent_.size() && displacementFacePresent_[faceIndex] != 0) {
+            const auto &triangles = displacementPolygonsByFace_[faceIndex];
+            for (const BspPolygon &triangle : triangles) result.push_back(triangle);
+            continue;
+        }
         if (face.edgeCount < 3 || face.edgeCount > 4096 || face.firstEdge < 0)
             continue;
         const qint64 edgeEnd = static_cast<qint64>(face.firstEdge) + face.edgeCount;
@@ -306,11 +495,12 @@ QString BspFile::summary() const {
         "File: %1\n"
         "Format: Source BSP v%2 | Size: %3 MiB\n"
         "Vertices: %4 | Edges: %5 | Surf edges: %6\n"
-        "Faces in lump: %7 | Visible outlines (sky surfaces hidden): %8 | Sky-textured faces: %9",
+        "Faces in lump: %7 | Visible polygons (sky surfaces hidden): %8 | Sky faces: %9\nDisplacements: %10 | Rendered displacement triangles: %11",
         "Файл: %1\n"
         "Формат: Source BSP v%2 | Размер: %3 МиБ\n"
         "Вершины: %4 | Рёбра: %5 | Направленные рёбра: %6\n"
-        "Граней в lump: %7 | Видимых контуров (без скайбокса): %8 | Граней sky-материалов: %9")
+        "Граней в lump: %7 | Видимых полигонов (без скайбокса): %8 | Граней sky-материалов: %9\n"
+        "Displacement-поверхностей: %10 | Отрисованных треугольников рельефа: %11")
         .arg(filePath_)
         .arg(version_)
         .arg(static_cast<double>(fileSize()) / (1024.0 * 1024.0), 0, 'f', 2)
@@ -319,6 +509,8 @@ QString BspFile::summary() const {
         .arg(surfEdges_.size())
         .arg(faces_.size())
         .arg(validPolygons)
-        .arg(skyFaceCount());
+        .arg(skyFaceCount())
+        .arg(displacementCount_)
+        .arg(displacementTriangleCount_);
 }
 } // namespace bspvision
