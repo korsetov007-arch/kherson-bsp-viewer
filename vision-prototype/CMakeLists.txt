@@ -18,6 +18,7 @@ qt_add_executable(bsp-geometry
     src/ballistics_view.cpp
     src/live_overlay.cpp
     src/cl_showpos_reader.cpp
+    src/heightfield.cpp
     include/app_language.hpp
     include/bsp_file.hpp
     include/bsp_map_view.hpp
@@ -25,6 +26,7 @@ qt_add_executable(bsp-geometry
     include/ballistics_view.hpp
     include/live_overlay.hpp
     include/cl_showpos_reader.hpp
+    include/heightfield.hpp
 )
 
 target_include_directories(bsp-geometry PRIVATE include)
@@ -70,4 +72,19 @@ if(BUILD_TESTING)
         target_compile_options(cl-showpos-tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME cl-showpos-tests COMMAND cl-showpos-tests)
+
+    add_executable(heightfield-tests
+        tests/heightfield_tests.cpp
+        src/heightfield.cpp
+        include/heightfield.hpp
+        include/bsp_file.hpp
+    )
+    target_include_directories(heightfield-tests PRIVATE include)
+    target_link_libraries(heightfield-tests PRIVATE Qt6::Core Qt6::Gui)
+    if(MSVC)
+        target_compile_options(heightfield-tests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(heightfield-tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME heightfield-tests COMMAND heightfield-tests)
 endif()
