@@ -47,10 +47,12 @@ if(BUILD_TESTING)
     add_executable(bsp-parser-tests
         tests/bsp_file_tests.cpp
         src/bsp_file.cpp
+        src/heightfield.cpp
         include/bsp_file.hpp
+        include/heightfield.hpp
     )
     target_include_directories(bsp-parser-tests PRIVATE include)
-    target_link_libraries(bsp-parser-tests PRIVATE Qt6::Core)
+    target_link_libraries(bsp-parser-tests PRIVATE Qt6::Core Qt6::Gui)
     if(MSVC)
         target_compile_options(bsp-parser-tests PRIVATE /W4 /permissive- /utf-8)
     else()
