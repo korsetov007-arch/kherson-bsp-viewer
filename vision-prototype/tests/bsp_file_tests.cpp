@@ -1,4 +1,5 @@
 #include "bsp_file.hpp"
+#include "heightfield.hpp"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -103,7 +104,7 @@ QByteArray makeSyntheticBsp() {
     return bytes;
 }
 
-QByteArray makeSyntheticDisplacementBsp() {
+QByteArray makeSyntheticDisplacementBsp(quint16 triangleTag = 1U) {
     QByteArray bytes(bspvision::BspFile::HeaderSize, '\0');
     putU32(bytes, 0, 0x50534256U);
     putI32(bytes, 4, bspvision::BspFile::SupportedVersion);
@@ -152,7 +153,7 @@ QByteArray makeSyntheticDisplacementBsp() {
     const int triangleCount = 4 * 4 * 2;
     QByteArray dispTris(triangleCount * 2, '\0');
     for (int i = 0; i < triangleCount; ++i)
-        putU16(dispTris, i * 2, 1U); // DISPTRI_TAG_SURFACE
+        putU16(dispTris, i * 2, triangleTag); // displacement triangle tag
 
     const auto addLump = [&bytes](int index, const QByteArray &lump) {
         if (lump.isEmpty()) return;
@@ -245,6 +246,34 @@ int main(int argc, char **argv) {
     }
     if (std::abs(maximumTerrainZ - 8.0F) > 0.01F)
         return fail("displacement vertex offset was not applied");
+
+    bspvision::Heightfield heightfield;
+    if (!heightfield.build(terrain, 8.0, 64, &error)) {
+        std::cerr << "FAIL: reconstructed displacement did not rasterize into heightfield: "
+                  << error.toStdString() << '\\n';
+        return 1;
+    }
+    if (!heightfield.isValid() || heightfield.coveredCellCount() < 100)
+        return fail("displacement triangles did not cover the expected heightfield cells");
+
+    // Some real-world BSPs contain displacement triangle records with zero tags.
+    // The entire displacement must still render when no triangle has SURFACE set.
+    const QString untaggedPath = temporaryDirectory.filePath(QStringLiteral("synthetic-untagged-displacement.bsp"));
+    if (!writeFile(untaggedPath, makeSyntheticDisplacementBsp(0U)))
+        return fail("could not write untagged displacement BSP");
+    bspvision::BspFile untagged;
+    if (!untagged.load(untaggedPath, &error)) {
+        std::cerr << "FAIL: untagged displacement BSP was rejected: "
+                  << error.toStdString() << '\\n';
+        return 1;
+    }
+    if (untagged.displacementCount() != 1 || untagged.displacementTriangleCount() != 32 ||
+        untagged.displacementFallbackSurfaceCount() != 1 ||
+        untagged.displacementTriangleZeroTagCount() != 32)
+        return fail("zero-tag displacement fallback did not emit all non-removed triangles");
+    if (!heightfield.build(untagged.facePolygons(), 8.0, 64, &error) ||
+        heightfield.coveredCellCount() < 100)
+        return fail("untagged displacement did not flow through to the heightfield");
 
     QByteArray badSignature = validBytes;
     badSignature[0] = 'X';
