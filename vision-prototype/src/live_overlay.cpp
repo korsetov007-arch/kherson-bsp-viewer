@@ -99,9 +99,13 @@ void LiveOverlay::showEvent(QShowEvent *event) {
 
 void LiveOverlay::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event);
+    QPainter painter(this);
+    // Explicitly clear old pixels when the game loses focus or the overlay is disabled.
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.fillRect(rect(), Qt::transparent);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     if (!targetEnabled_) return;
 
-    QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     const double screenW = width();
     const double screenH = height();
