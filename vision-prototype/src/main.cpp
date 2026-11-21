@@ -401,15 +401,15 @@ private:
         auto *fovRow = new QHBoxLayout();
         fovRow->addWidget(new QLabel(bspvision::uiText("Horizontal FOV °", "Горизонтальный FOV °"), liveGroup));
         fovRow->addWidget(overlayFov_);
-        auto *startOverlay = new QPushButton(bspvision::uiText("Connect / show overlay", "Подключить / показать оверлей"), liveGroup);
+        auto *startOverlay = new QPushButton(bspvision::uiText("Show overlay", "Показать оверлей"), liveGroup);
         auto *stopOverlay = new QPushButton(bspvision::uiText("Hide overlay", "Скрыть оверлей"), liveGroup);
         fovRow->addWidget(startOverlay);
         fovRow->addWidget(stopOverlay);
         fovRow->addStretch();
         liveLayout->addLayout(fovRow);
         liveStatusLabel_ = new QLabel(bspvision::uiText(
-            "Waiting for the native bridge. Install the binary module and Lua adapter, then restart GMod.",
-            "Ожидаем нативный мост. Установите бинарный модуль и Lua-адаптер, затем перезапустите GMod."), liveGroup);
+            "Native Bridge connects automatically when available. The cl_showpos screen fallback is configured below.",
+            "Native Bridge подключается автоматически при доступности. Экранный режим cl_showpos настраивается ниже."), liveGroup);
         liveStatusLabel_->setWordWrap(true);
         liveLayout->addWidget(liveStatusLabel_);
         liveTelemetryLabel_ = new QLabel(liveGroup);
