@@ -15,12 +15,9 @@
 #include <QMenuBar>
 #include <QSettings>
 #include <QApplication>
-#include <QCoreApplication>
-#include <QClipboard>
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QList>
-#include <QRegularExpression>
 #include <QScreen>
 #include <QTimer>
 #include <QLocalServer>
@@ -52,15 +49,6 @@
 #include <QVector3D>
 #include <QtMath>
 
-namespace {
-quintptr nativeHandleValue(WId handle) {
-#ifdef Q_OS_WIN
-    return reinterpret_cast<quintptr>(handle);
-#else
-    return static_cast<quintptr>(handle);
-#endif
-}
-}
 
 class MainWindow final : public QMainWindow {
 public:
@@ -169,7 +157,7 @@ private:
         liveStatusLabel_ = nullptr;
         liveTelemetryLabel_ = nullptr;
         showSkyboxCheck_ = nullptr;
-        currentYawInit_ = currentPitchInit_ = sensitivity_ = mYaw_ = mPitch_ = overlayFov_ = nullptr;
+        currentYawInit_ = currentPitchInit_ = overlayFov_ = nullptr;
         originX_ = originY_ = originZ_ = nullptr;
         targetX_ = targetY_ = targetZ_ = nullptr;
         speed_ = gravity_ = yaw_ = pitch_ = flightTime_ = nullptr;
