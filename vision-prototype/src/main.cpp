@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QImage>
 #include <QLabel>
@@ -12,8 +13,10 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QScreen>
 #include <QScrollArea>
 #include <QStatusBar>
+#include <QTimer>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -86,17 +89,19 @@ private:
         auto *controls = new QHBoxLayout();
         auto *loadReference = new QPushButton(QStringLiteral("Load reference image…"), tab);
         auto *loadCurrent = new QPushButton(QStringLiteral("Load screenshot…"), tab);
+        auto *captureScreen = new QPushButton(QStringLiteral("Capture primary screen (2 s)"), tab);
         auto *match = new QPushButton(QStringLiteral("Find visual matches"), tab);
         match->setEnabled(false);
         controls->addWidget(loadReference);
         controls->addWidget(loadCurrent);
+        controls->addWidget(captureScreen);
         controls->addWidget(match);
         controls->addStretch();
         layout->addLayout(controls);
 
         auto *hint = new QLabel(QStringLiteral(
             "Local image analysis: ORB feature matching plus RANSAC geometric filtering. "
-            "This prototype does not read the game process or automate game input."), tab);
+            "Screen capture hides this window for two seconds. No game-process access or input automation."), tab);
         hint->setWordWrap(true);
         layout->addWidget(hint);
 
@@ -149,6 +154,39 @@ private:
             updateMatchEnabled(match);
             statusBar()->showMessage(QStringLiteral("Screenshot loaded: %1 × %2")
                 .arg(current_.cols).arg(current_.rows));
+        });
+        connect(captureScreen, &QPushButton::clicked, this, [this, match] {
+            QScreen *screen = QGuiApplication::primaryScreen();
+            if (!screen) {
+                QMessageBox::warning(this, QStringLiteral("Screen capture"),
+                    QStringLiteral("No primary screen is available."));
+                return;
+            }
+
+            statusBar()->showMessage(QStringLiteral(
+                "Capturing primary screen in 2 seconds — switch to the game now."));
+            hide();
+            QTimer::singleShot(2000, this, [this, screen, match] {
+                const QPixmap capture = screen->grabWindow(0);
+                showNormal();
+                raise();
+                activateWindow();
+                if (capture.isNull()) {
+                    QMessageBox::warning(this, QStringLiteral("Screen capture"),
+                        QStringLiteral("Screen capture failed. Try borderless/windowed mode or load a screenshot file."));
+                    return;
+                }
+
+                QImage rgb = capture.toImage().convertToFormat(QImage::Format_RGB888);
+                cv::Mat rgbView(rgb.height(), rgb.width(), CV_8UC3,
+                                rgb.bits(), static_cast<size_t>(rgb.bytesPerLine()));
+                cv::cvtColor(rgbView, current_, cv::COLOR_RGB2BGR);
+                currentView_->setToolTip(QStringLiteral("Captured from the primary monitor"));
+                refreshImages();
+                updateMatchEnabled(match);
+                statusBar()->showMessage(QStringLiteral("Captured screen: %1 × %2")
+                    .arg(current_.cols).arg(current_.rows));
+            });
         });
         connect(match, &QPushButton::clicked, this, [this] { findMatches(); });
     }
