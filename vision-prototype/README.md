@@ -1,33 +1,26 @@
-# BSP Geometry & Ballistics
+# Source BSP Geometry Lab
 
-A standalone Windows desktop application written in C++20 and Qt 6 for inspecting Source BSP v20 maps and exploring ideal projectile trajectories. All map parsing and calculations are performed locally. The app does not read game-process memory, inject into a game, automate mouse input, or control gameplay.
+Bilingual Windows desktop tool for inspecting Source Engine BSP v20 geometry and planning ideal projectile trajectories. Built with C++20 and Qt 6; it does not require OpenCV or any computer-vision model.
 
 ## Features
 
-- **BSP geometry:** load Source BSP version 20 files, validate the VBSP signature and lump ranges, and inspect a summary of lump sizes and record counts.
-- **Map parsing:** extract vertices, edges, surfedges, and faces to reconstruct valid face outlines.
-- **Geometry views:** inspect face outlines from above in XY, select XY coordinates by clicking the map, and rotate/zoom a lightweight 3D preview with the mouse.
-- **Ballistic lab:** enter launch and target XYZ coordinates and configure projectile speed, gravity, yaw, elevation, and flight time.
-- **Map coordinate picking:** pick launch or target X/Y from the BSP preview. Enter Z manually because a top-down view cannot determine which floor or ceiling a point belongs to.
-- **Trajectory solving:** calculate the current trajectory or solve for a low-arc/high-arc ideal projectile angle to a target.
-- **Trajectory display:** see the path in XY plan, XZ elevation, and oblique 3D views, with launch/target markers, grids, and numeric axis labels.
-- **Parser tests:** synthetic tests cover BSP header handling, geometry reconstruction, and rejection of invalid signatures or lump ranges.
+- Load a Source BSP v20 map and inspect its lump table.
+- View polygon geometry from above (XY) or in a rotatable 3D projection.
+- Detect common Source skybox material names from BSP texture metadata. Sky-textured faces are hidden by default so giant sky planes are less likely to overwhelm the level preview; use **Show skybox surfaces** to inspect them.
+- Switch the interface between Russian and English via **Settings → Language**. The selected language is saved for the next launch.
+- Select X/Y coordinates by clicking the map. Enter Z manually to choose the correct floor.
+- Plan a projectile path in XY, XZ and oblique 3D views, and solve for low or high ideal ballistic arcs.
+- Run synthetic BSP parser tests with CTest.
 
 ## Limitations
 
-The parser currently supports BSP version 20 only. Materials and textures are not rendered. The 3D view is a lightweight painter-based projection rather than a full z-buffer renderer, so intersecting or back-facing surfaces may overlap imperfectly.
-
-The ballistic lab uses ideal constant-gravity projectile equations. It does not simulate collisions, map occlusion, air drag, splash radius, weapon-specific behavior, or server-side physics. Treat computed paths as a visual planning reference; they are not automatically sent to a game.
+Only Source BSP version 20 is supported. The preview is a lightweight polygon renderer, not a complete Source renderer: it does not load textures/materials into the view, implement a depth buffer, or reproduce the game's sky rendering. Sky-material classification depends on texture names stored in the BSP; unusual or missing material metadata may leave some sky faces visible. The ballistic solver ignores collisions, map occlusion, drag, weapon-specific behavior and server-side physics.
 
 ## Build on Windows
 
-Prerequisites:
+Requirements: Visual Studio 2022 with **Desktop development with C++**, CMake 3.21+, and Qt 6.5+ (MSVC 2022 x64 Widgets kit).
 
-- Visual Studio 2022 with the **Desktop development with C++** workload.
-- CMake 3.21 or newer.
-- Qt 6.5 or newer with the MSVC 2022 64-bit **Widgets** component.
-
-Open **Developer PowerShell for VS 2022**, then configure and build. Adjust the Qt path to match your installation:
+Run in Developer PowerShell for VS 2022 from the repository root (adjust the Qt path):
 
 ~~~powershell
 cd vision-prototype
@@ -37,22 +30,12 @@ ctest --test-dir build -C Release --output-on-failure
 .\build\Release\bsp-geometry.exe
 ~~~
 
-If you use Visual Studio's CMake workflow, choose **File → Open → CMake…** and select vision-prototype/CMakeLists.txt. Ensure the selected configuration is x64 and that CMake can locate Qt.
+## Quick start
 
-## Using the app
+1. Launch `bsp-geometry.exe`.
+2. Open **BSP geometry / Геометрия BSP** and choose **Load Source BSP v20… / Загрузить Source BSP v20…**.
+3. Leave **Show skybox surfaces / Показывать поверхности скайбокса** unchecked first. Enable it only to inspect those faces.
+4. Use **Top-down XY / Сверху XY** to select horizontal coordinates, or **Orbit 3D / 3D-орбита** to rotate with the left mouse button and zoom with the wheel.
+5. Open **Ballistic lab / Баллистика**, enter start and target coordinates, then calculate the current arc or solve for the low/high arc. The Z coordinate must be entered manually.
 
-1. In **BSP geometry**, load a Source BSP v20 file and inspect the summary and lump table.
-2. Use **Top-down XY** to view the map outline and click to inspect coordinates, or use **Orbit 3D** to rotate the geometry (drag) and zoom (mouse wheel).
-3. In **Ballistic lab**, enter launch and target XYZ coordinates and adjust the projectile parameters. Use **Pick XY on map…** to select X/Y from the BSP preview, then enter Z manually.
-4. Choose **Calculate current arc** to preview the entered yaw/elevation or **Solve target · low arc** / **Solve target · high arc** to calculate an ideal angle for reaching the selected target.
-
-## Development notes
-
-- Main UI and ballistic calculations: src/main.cpp
-- BSP header/lump validation and geometry extraction: src/bsp_file.cpp
-- Top-down map rendering and XY picking: src/bsp_map_view.cpp
-- Orbitable 3D preview: src/bsp_3d_view.cpp
-- Trajectory drawing: src/ballistics_view.cpp
-- Parser tests: tests/bsp_file_tests.cpp
-
-The GitHub Actions workflow builds the Windows application and runs the BSP parser tests.
+For the detailed Russian/English user manual, see `docs/USER_MANUAL.md`.
