@@ -11,6 +11,7 @@ Bilingual Windows desktop tool for inspecting Source Engine BSP v20 geometry and
 - Select X/Y coordinates by clicking the map. Enter Z manually to choose the correct floor.
 - Plan a projectile path in XY, XZ and oblique 3D views, and solve for low or high ideal ballistic arcs.
 - Run synthetic BSP parser tests with CTest.
+- Optional clientside Garry's Mod link: choose the game's `garrysmod/data` directory to exchange telemetry and live aim-marker data; no server addon is required. See [the bilingual addon guide](../gmod-addon/README.md).
 
 ## Limitations
 
@@ -36,6 +37,7 @@ ctest --test-dir build -C Release --output-on-failure
 2. Open **BSP geometry / Геометрия BSP** and choose **Load Source BSP v20… / Загрузить Source BSP v20…**.
 3. Leave **Show skybox surfaces / Показывать поверхности скайбокса** unchecked first. Enable it only to inspect those faces.
 4. Use **Top-down XY / Сверху XY** to select horizontal coordinates, or **Orbit 3D / 3D-орбита** to rotate with the left mouse button and zoom with the wheel.
-5. Open **Ballistic lab / Баллистика**, enter start and target coordinates, then calculate the current arc or solve for the low/high arc. The Z coordinate must be entered manually.
+5. Open **Ballistic lab / Баллистика**, enter/select the target coordinates, then calculate the current arc or solve for the low/high arc. The Z coordinate must be entered manually.
+6. For the optional live HUD, install the client addon from `gmod-addon/source_bsp_geometry_lab`, select the game's `garrysmod/data` folder in **Garry's Mod live link**, and load a BSP whose filename matches the current in-game map. Then select a target and solve an arc. Use `sbgl_hud_toggle` in the game console to toggle the marker. Details: [addon guide](../gmod-addon/README.md).
 
 For the detailed Russian/English user manual, see `docs/USER_MANUAL.md`.
