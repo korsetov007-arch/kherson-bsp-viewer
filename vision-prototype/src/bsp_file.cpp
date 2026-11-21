@@ -3,10 +3,9 @@
 #include <QFile>
 #include <QtEndian>
 
-#include <algorithm>
 #include <bit>
 #include <cmath>
-#include <limits>
+#include <utility>
 
 namespace bspvision {
 namespace {
@@ -58,11 +57,6 @@ quint32 readU32(const uchar *data) {
 
 float readF32(const uchar *data) {
     return std::bit_cast<float>(readU32(data));
-}
-
-QString fail(const QString &message, QString *error) {
-    if (error) *error = message;
-    return message;
 }
 
 } // namespace
