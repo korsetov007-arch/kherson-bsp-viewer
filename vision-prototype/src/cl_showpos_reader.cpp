@@ -222,18 +222,25 @@ struct DecodedLine {
     double confidence = 0.0;
 };
 
-DecodedLine decodeLine(const QImage &mask, const FontProfile &profile, int x, int y) {
+DecodedLine decodeLine(const QImage &mask, const FontProfile &profile, int x, int y,
+                       const QString &prefix, int maxCells) {
     DecodedLine result;
-    if (x < 0 || y < 0 || x >= mask.width() || y + profile.cellHeight > mask.height())
+    result.text = prefix;
+    const int numericStart = x + prefix.size() * profile.cellWidth;
+    if (numericStart < 0 || y < 0 || numericStart >= mask.width() ||
+        y + profile.cellHeight > mask.height())
         return result;
 
-    const QString alphabet = QStringLiteral("0123456789.+-:posangvel");
-    const int count = std::min(96, (mask.width() - x) / profile.cellWidth);
+    // The label is already anchored by a literal template. Decode only the
+    // numeric tail; this avoids spending time classifying scene pixels beyond
+    // the three values and reduces false positives from bright scenery.
+    const QString alphabet = QStringLiteral("0123456789.+-");
+    const int count = std::min(maxCells, (mask.width() - numericStart) / profile.cellWidth);
     double totalDistance = 0.0;
     int classified = 0;
 
     for (int cell = 0; cell < count; ++cell) {
-        const int left = x + cell * profile.cellWidth;
+        const int left = numericStart + cell * profile.cellWidth;
         int ink = 0;
         for (int row = 0; row < profile.cellHeight; ++row) {
             const uchar *pixels = mask.constScanLine(y + row) + left;
@@ -305,9 +312,25 @@ public:
         }
 
         const int lineStep = profile_.cellHeight + 2;
-        const DecodedLine pos = decodeLine(mask, profile_, anchor_.x, anchor_.y);
-        const DecodedLine ang = decodeLine(mask, profile_, anchor_.x, anchor_.y + lineStep);
-        const DecodedLine vel = decodeLine(mask, profile_, anchor_.x, anchor_.y + 2 * lineStep);
+        const QImage angleLabel = renderTemplate(profile_, QStringLiteral("ang:"));
+        const double angleLabelDistance = maskDistance(
+            mask, anchor_.x, anchor_.y + lineStep, angleLabel);
+        if (angleLabelDistance > 0.64) {
+            if (error) *error = QStringLiteral("The pos: label was found, but the ang: line did not match the expected template.");
+            return false;
+        }
+
+        const DecodedLine pos = decodeLine(mask, profile_, anchor_.x, anchor_.y,
+                                           QStringLiteral("pos:"), 38);
+        const DecodedLine ang = decodeLine(mask, profile_, anchor_.x, anchor_.y + lineStep,
+                                           QStringLiteral("ang:"), 38);
+        const QImage velocityLabel = renderTemplate(profile_, QStringLiteral("vel:"));
+        const int velocityY = anchor_.y + 2 * lineStep;
+        const bool hasVelocityLabel = velocityY + profile_.cellHeight <= mask.height() &&
+            maskDistance(mask, anchor_.x, velocityY, velocityLabel) <= 0.64;
+        const DecodedLine vel = hasVelocityLabel
+            ? decodeLine(mask, profile_, anchor_.x, velocityY, QStringLiteral("vel:"), 16)
+            : DecodedLine{QStringLiteral("vel:"), 0.0};
         QString parseError;
         ClShowPosSample parsed;
         if (!ClShowPosReader::parseTextLines({pos.text, ang.text, vel.text}, &parsed, &parseError)) {
@@ -320,8 +343,9 @@ public:
         parsed.anglesLine = ang.text.trimmed();
         parsed.velocityLine = vel.text.trimmed();
         parsed.confidence = std::clamp(
-            (1.0 - anchor_.distance) * 0.40 +
-            (pos.confidence + ang.confidence) * 0.30,
+            (1.0 - anchor_.distance) * 0.30 +
+            (1.0 - angleLabelDistance) * 0.20 +
+            (pos.confidence + ang.confidence) * 0.25,
             0.0, 1.0);
         if (parsed.confidence < 0.35) {
             if (error) *error = QStringLiteral("Read confidence is too low; keep the game visible and adjust the crop.");
