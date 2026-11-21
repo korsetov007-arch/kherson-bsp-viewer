@@ -17,6 +17,7 @@ public:
 
     void setMap(const QVector<BspVertex> &vertices, const QVector<BspPolygon> &polygons);
     void setHeightfield(const QImage &hillshade, const QRectF &worldBounds);
+    void setHeightfieldContours(const QVector<QLineF> &contours);
     void setHeightfieldVisible(bool visible);
     void clearMap();
 
@@ -35,6 +36,7 @@ private:
     QVector<BspPolygon> polygons_;
     QImage heightfieldImage_;
     QRectF heightfieldWorldBounds_;
+    QVector<QLineF> heightfieldContours_;
     bool heightfieldVisible_ = false;
     QPointF selectedWorld_;
     bool hasSelection_ = false;
