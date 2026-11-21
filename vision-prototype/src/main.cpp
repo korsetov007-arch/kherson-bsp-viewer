@@ -340,7 +340,7 @@ private:
         flightTime_->setSingleStep(0.25);
         physicsForm->addRow(bspvision::uiText("Speed (units/s)", "Скорость (ед./с)"), speed_);
         physicsForm->addRow(bspvision::uiText("Gravity (units/s²)", "Гравитация (ед./с²)"), gravity_);
-        physicsForm->addRow(QStringLiteral("Yaw (°)"), yaw_);
+        physicsForm->addRow(bspvision::uiText("Yaw / azimuth (°)", "Азимут (°)"), yaw_);
         physicsForm->addRow(bspvision::uiText("Pitch / elevation (°)", "Угол возвышения (°)"), pitch_);
         physicsForm->addRow(bspvision::uiText("Flight time (s)", "Время полёта (с)"), flightTime_);
 
@@ -377,7 +377,7 @@ private:
         });
         connect(pickTarget, &QPushButton::clicked, this, [this, tabs] {
             pickMode_ = 2;
-            tabs->setCurrentIndex(1);
+            tabs->setCurrentIndex(0);
             statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set target X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y цели; координату Z задайте во вкладке баллистики."));
         });
         connect(calculate, &QPushButton::clicked, this, [this] { calculateArc(false); });
@@ -385,6 +385,7 @@ private:
         connect(solveHigh, &QPushButton::clicked, this, [this] { calculateArc(true, true); });
         connect(clear, &QPushButton::clicked, this, [this] {
             ballisticsView_->clearTrajectory();
+            trajectoryCalculated_ = false;
             ballisticsSummary_->setText(bspvision::uiText("Trajectory cleared.", "Траектория очищена."));
         });
     }
