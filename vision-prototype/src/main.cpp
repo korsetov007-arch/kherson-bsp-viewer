@@ -1337,6 +1337,12 @@ private:
                 "Сначала рассчитайте траекторию, затем нажмите F7 в Garry's Mod."));
             return;
         }
+        if (lastTrajectoryBlocked_) {
+            statusBar()->showMessage(bspvision::uiText(
+                "Auto aim blocked: the selected ballistic path intersects BSP geometry. Choose a clear arc first.",
+                "Автодоводка недоступна: рассчитанная траектория пересекает геометрию BSP. Сначала выберите свободную дугу."));
+            return;
+        }
 #if defined(Q_OS_WIN)
         if (!isGarrysModForeground()) {
             statusBar()->showMessage(bspvision::uiText(
