@@ -90,6 +90,14 @@ void LiveOverlay::setTargetEnabled(bool enabled) {
 void LiveOverlay::setLandmark(const QVector3D &worldPosition,
                               const QVector3D &cameraPosition,
                               double yawDeg, double sourcePitchDeg, bool enabled) {
+    if (enabled && !landmarkEnabled_) {
+        hasSmoothedLandmarkScreen_ = false;
+        landmarkSmoothingClock_.invalidate();
+    }
+    if (!enabled) {
+        hasSmoothedLandmarkScreen_ = false;
+        landmarkSmoothingClock_.invalidate();
+    }
     landmarkWorldPosition_ = worldPosition;
     cameraPosition_ = cameraPosition;
     landmarkYaw_ = yawDeg;
@@ -175,37 +183,86 @@ void LiveOverlay::paintEvent(QPaintEvent *event) {
         if (inFront) {
             const bool inViewport = landmarkScreen.x() >= 0.0 && landmarkScreen.x() < screenW &&
                                     landmarkScreen.y() >= 0.0 && landmarkScreen.y() < screenH;
-            const double margin = 24.0;
+
+            // Exponential smoothing is time-based, so the marker remains stable
+            // across different refresh rates and the 30 Hz cl_showpos sampling.
+            if (!landmarkSmoothingClock_.isValid()) {
+                landmarkSmoothingClock_.start();
+                smoothedLandmarkScreen_ = landmarkScreen;
+                hasSmoothedLandmarkScreen_ = true;
+            } else {
+                const qint64 elapsedMs = std::clamp<qint64>(
+                    landmarkSmoothingClock_.restart(), 1, 100);
+                const double alpha = 1.0 - std::exp(-static_cast<double>(elapsedMs) / 58.0);
+                if (!hasSmoothedLandmarkScreen_) {
+                    smoothedLandmarkScreen_ = landmarkScreen;
+                    hasSmoothedLandmarkScreen_ = true;
+                } else {
+                    smoothedLandmarkScreen_ += (landmarkScreen - smoothedLandmarkScreen_) * alpha;
+                }
+            }
+
+            const double margin = 30.0;
             const QPointF displayPoint(
-                std::clamp(landmarkScreen.x(), margin, screenW - margin),
-                std::clamp(landmarkScreen.y(), margin, screenH - margin));
+                std::clamp(smoothedLandmarkScreen_.x(), margin, screenW - margin),
+                std::clamp(smoothedLandmarkScreen_.y(), margin, screenH - margin));
             constexpr double aimRadius = 22.0;
             const bool aimedAt = inViewport &&
                 std::hypot(landmarkScreen.x() - cx, landmarkScreen.y() - cy) <= aimRadius;
-            const QColor ring = aimedAt ? QColor(60, 245, 130, 250)
-                                        : QColor(255, 190, 55, 245);
-            painter.setPen(QPen(ring, 3.0));
-            painter.setBrush(QColor(ring.red(), ring.green(), ring.blue(), 24));
+            const QColor ring = aimedAt ? QColor(57, 246, 137, 250)
+                                        : QColor(255, 190, 58, 248);
+
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            if (inViewport) {
+                painter.setPen(QPen(QColor(ring.red(), ring.green(), ring.blue(), 58),
+                                    1.2, Qt::DashLine, Qt::RoundCap));
+                painter.drawLine(QPointF(cx, cy), displayPoint);
+            }
+
+            // Layered translucent strokes create a clean glow without a costly blur.
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(QColor(ring.red(), ring.green(), ring.blue(), 24),
+                                10.0, Qt::SolidLine, Qt::RoundCap));
+            painter.drawEllipse(displayPoint, 25.0, 25.0);
+            painter.setPen(QPen(QColor(ring.red(), ring.green(), ring.blue(), 78),
+                                5.0, Qt::SolidLine, Qt::RoundCap));
+            painter.drawEllipse(displayPoint, 23.0, 23.0);
+            painter.setPen(QPen(ring, 2.4, Qt::SolidLine, Qt::RoundCap));
             painter.drawEllipse(displayPoint, aimRadius, aimRadius);
-            painter.setPen(QPen(ring, 2.0));
+            painter.setPen(QPen(QColor(245, 250, 255, 190), 1.0, Qt::SolidLine, Qt::RoundCap));
+            painter.drawEllipse(displayPoint, 16.5, 16.5);
+
+            painter.setPen(QPen(ring, 2.0, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(displayPoint + QPointF(-31.0, 0.0),
+                             displayPoint + QPointF(-25.0, 0.0));
+            painter.drawLine(displayPoint + QPointF(25.0, 0.0),
+                             displayPoint + QPointF(31.0, 0.0));
+            painter.drawLine(displayPoint + QPointF(0.0, -31.0),
+                             displayPoint + QPointF(0.0, -25.0));
+            painter.drawLine(displayPoint + QPointF(0.0, 25.0),
+                             displayPoint + QPointF(0.0, 31.0));
+            painter.setPen(Qt::NoPen);
             painter.setBrush(ring);
-            painter.drawEllipse(displayPoint, 3.0, 3.0);
+            painter.drawEllipse(displayPoint, aimedAt ? 4.2 : 3.2, aimedAt ? 4.2 : 3.2);
 
             if (!inViewport) {
-                painter.setPen(QPen(ring, 2.4));
+                painter.setPen(QPen(ring, 2.6, Qt::SolidLine, Qt::RoundCap));
+                painter.setBrush(Qt::NoBrush);
                 painter.drawLine(displayPoint + QPointF(-7.0, -7.0),
                                  displayPoint + QPointF(7.0, 7.0));
                 painter.drawLine(displayPoint + QPointF(-7.0, 7.0),
                                  displayPoint + QPointF(7.0, -7.0));
             }
+            painter.restore();
 
-            painter.setPen(QColor(245, 248, 252, 230));
+            painter.setPen(QColor(245, 248, 252, 238));
             const QString label = aimedAt
                 ? uiText("AIM LOCK", "НАВЕДЕНО")
                 : (inViewport ? uiText("LANDMARK", "ОРИЕНТИР")
                               : uiText("LANDMARK · TURN", "ОРИЕНТИР · ПОВОРОТ"));
-            painter.drawText(QRectF(displayPoint.x() + aimRadius + 7.0,
-                                    displayPoint.y() - 11.0, 190.0, 22.0),
+            painter.drawText(QRectF(displayPoint.x() + 35.0,
+                                    displayPoint.y() - 12.0, 190.0, 24.0),
                              Qt::AlignLeft | Qt::AlignVCenter, label);
         } else {
             painter.setPen(QPen(QColor(255, 190, 55, 245), 2.5));
