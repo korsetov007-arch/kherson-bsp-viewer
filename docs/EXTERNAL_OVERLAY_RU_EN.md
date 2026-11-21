@@ -1,23 +1,27 @@
-# Native SBGL Bridge / Нативный мост SBGL
+# Screen-only cl_showpos telemetry / Экранная телеметрия cl_showpos
 
-The old mouse-delta overlay has been removed. Camera angles are no longer estimated from Raw Input, and the app no longer asks for `getpos` clipboard paste.
+## Русский
 
-Старый оверлей, оценивавший углы по движениям мыши, удалён. Программа больше не вычисляет углы из Raw Input и не просит копировать `getpos`.
+Приложение использует только текст, который видно на экране. В нём больше нет SBGL Bridge, Lua-адаптера, нативного GMod-модуля или named pipe.
 
-## Setup / Установка
+1. В Garry's Mod выполните \`cl_showpos 1\`, если команда доступна.
+2. По возможности используйте оконный или borderless-режим. Запустите \`bsp-geometry.exe\`.
+3. Откройте вкладку «Баллистика» и нажмите **«Выделить область мышью»**.
+4. На затемнённом экране зажмите левую кнопку и обведите рамкой строки \`pos:\` и \`ang:\`; \`vel:\` можно включить в ту же область. Отпустите кнопку — выбранная область сразу сохранится и начнётся распознавание.
+5. Чтобы поменять область, снова нажмите кнопку и выделите прямоугольник заново. Можно также вручную поправить X/Y/ширину/высоту. Значения сохраняются между запусками.
+6. Убедитесь, что считываются координаты и углы, и проверяйте confidence. \`pos\` — начало вида Source, не обязательно дульный срез.
 
-See [gmod-addon/native-bridge/README.md](../gmod-addon/native-bridge/README.md) for native module build instructions and Lua adapter setup.
+Селектор работает поверх основного монитора и переводит координаты выделения из логических единиц Qt в физические пиксели экрана. Из-за шрифтового сглаживания и яркого фона распознавание не гарантировано; при низкой уверенности данные не принимаются.
 
-См. [инструкцию по нативному мосту](../gmod-addon/native-bridge/README.md).
+## English
 
-## Important limitations / Ограничения
+The app uses only text that is visibly rendered on screen. SBGL Bridge, the Lua adapter, native GMod module, and named pipe have been removed.
 
-- This uses the documented Garry's Mod binary Lua-module loader, not arbitrary DLL injection.
-- Local client Lua and binary-module loading must be permitted by the GMod client/server configuration. The bridge cannot bypass servers that disable clientside Lua.
-- The Lua adapter captures render-camera values in a render hook and exports best-effort LVS vehicle/weapon-handler data. Vehicle-specific barrel direction is not guaranteed by the common LVS API.
-- The source is not a prebuilt binary. Compile the module and Qt app locally and test in-game before relying on it.
+1. In Garry's Mod, run \`cl_showpos 1\` if the command is available.
+2. Prefer windowed or borderless mode. Launch \`bsp-geometry.exe\`.
+3. Open the Ballistic tab and click **Select crop with mouse**.
+4. The screen dims. Hold the left mouse button and drag a rectangle around \`pos:\` and \`ang:\`; include \`vel:\` if possible. Release to save the crop and start recognition immediately.
+5. Select again to change the crop, or fine-tune X/Y/width/height manually. The values persist between launches.
+6. Check the decoded coordinates, angles and confidence. Source \`pos\` is the view origin, not necessarily the weapon muzzle.
 
-- Используется штатная загрузка бинарного Lua-модуля Garry's Mod, а не произвольная инъекция DLL.
-- Клиентский Lua и бинарные модули должны быть разрешены конфигурацией игры/сервера. Мост не обходит серверные запреты.
-- Lua-адаптер получает параметры камеры в render hook и экспортирует доступные данные LVS. Направление ствола конкретной машины не гарантируется общим API LVS.
-- В репозитории находится исходный код, а не готовая проверенная DLL. Сначала соберите приложение и модуль и проверьте их в игре.
+The selector covers the primary monitor and converts Qt logical coordinates to physical display pixels. Font anti-aliasing and a bright scene can affect matching; low-confidence readings are rejected.
