@@ -20,7 +20,6 @@ public:
     void setHeightfield(const QImage &hillshade, const QRectF &worldBounds);
     void setHeightfieldContours(const QVector<QLineF> &contours);
     void setHeightfieldVisible(bool visible);
-    void setWorldLandmark(double x, double y, bool visible);
     void clearMap();
 
     std::function<void(double, double)> pointSelected;
@@ -40,8 +39,6 @@ private:
     QRectF heightfieldWorldBounds_;
     QVector<QLineF> heightfieldContours_;
     bool heightfieldVisible_ = false;
-    QPointF landmarkWorld_;
-    bool hasLandmark_ = false;
     QPointF selectedWorld_;
     bool hasSelection_ = false;
     double minX_ = 0.0;
