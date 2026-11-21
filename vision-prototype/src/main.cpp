@@ -20,6 +20,7 @@
 #include <QClipboard>
 #include <QFileDialog>
 #include <QGuiApplication>
+#include <QList>
 #include <QRegularExpression>
 #include <QScreen>
 #include <QTimer>
