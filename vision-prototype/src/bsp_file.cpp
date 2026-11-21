@@ -491,17 +491,24 @@ int BspFile::skyFaceCount() const {
 
 QString BspFile::summary() const {
     if (!loaded_) return uiText("No BSP loaded.", "BSP-карта не загружена.");
-    const int validPolygons = facePolygons().size();
+    const QVector<BspPolygon> visiblePolygons = facePolygons();
+    const int validPolygons = visiblePolygons.size();
+    qint64 totalSurfaceTriangles = 0;
+    for (const BspPolygon &polygon : visiblePolygons) {
+        if (polygon.vertices.size() >= 3)
+            totalSurfaceTriangles += polygon.vertices.size() - 2;
+    }
     return uiText(
         "File: %1\n"
         "Format: Source BSP v%2 | Size: %3 MiB\n"
         "Vertices: %4 | Edges: %5 | Surf edges: %6\n"
-        "Faces in lump: %7 | Visible polygons (sky surfaces hidden): %8 | Sky faces: %9\nDisplacements: %10 | Rendered displacement triangles: %11",
+        "Faces in lump: %7 | Visible polygons (sky surfaces hidden): %8 | Sky faces: %9\n"
+        "Triangulated visible surface: %10 triangles\nDisplacements: %11 | Displacement triangles: %12",
         "Файл: %1\n"
         "Формат: Source BSP v%2 | Размер: %3 МиБ\n"
         "Вершины: %4 | Рёбра: %5 | Направленные рёбра: %6\n"
         "Граней в lump: %7 | Видимых полигонов (без скайбокса): %8 | Граней sky-материалов: %9\n"
-        "Displacement-поверхностей: %10 | Отрисованных треугольников рельефа: %11")
+        "Треугольников всей видимой поверхности: %10\nDisplacement-поверхностей: %11 | Треугольников displacement: %12")
         .arg(filePath_)
         .arg(version_)
         .arg(static_cast<double>(fileSize()) / (1024.0 * 1024.0), 0, 'f', 2)
@@ -511,6 +518,7 @@ QString BspFile::summary() const {
         .arg(faces_.size())
         .arg(validPolygons)
         .arg(skyFaceCount())
+        .arg(totalSurfaceTriangles)
         .arg(displacementCount_)
         .arg(displacementTriangleCount_);
 }
