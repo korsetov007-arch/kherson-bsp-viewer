@@ -2,7 +2,6 @@
 
 #include <QByteArray>
 #include <QString>
-#include <QString>
 #include <QVector>
 
 #include <array>
