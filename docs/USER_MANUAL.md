@@ -101,7 +101,7 @@ Colors: green = launch, red = target, amber = trajectory.
 
 ### Русский
 
-Этот режим не использует Lua, чтение памяти процесса или нейросеть. Он захватывает прямоугольную область основного монитора через DXGI Desktop Duplication и ищет видимые строки `pos:`, `ang:` и `vel:` через пиксельные шаблоны.
+Этот режим не использует Lua или чтение памяти процесса. Он захватывает прямоугольную область экрана через DXGI Desktop Duplication и ищет видимые строки `pos:`, `ang:` и `vel:` по шаблонам. Маска теперь выделяет светлые почти нейтральные пиксели (белый текст), а сравнение меньше штрафует посторонние яркие пиксели сцены; это должно помогать на цветном фоне, но не гарантирует распознавание при перекрытии текста.
 
 1. В игре включите `cl_showpos 1`, чтобы строки телеметрии были видны на экране.
 2. Во вкладке «Баллистика» нажмите **«Выделить область мышью»**. Экран слегка затемнится; удерживайте левую кнопку и обведите прямоугольником строки `pos:` и `ang:` (по возможности и `vel:`), затем отпустите кнопку.
@@ -109,11 +109,11 @@ Colors: green = launch, red = target, amber = trajectory.
 4. Следите за состоянием распознавания и оценкой уверенности. Непрошедшие числовую проверку или низкоуверенные данные не принимаются.
 5. Кнопка «Использовать pos как точку запуска» копирует прочитанную позицию в начало траектории. `pos` — это `MainViewOrigin` Source, а не гарантированная позиция дульного среза. Проверьте смещение камеры/орудия для конкретной техники.
 
-Это экспериментальная реализация: распознавание шаблонов может зависеть от шрифта, разрешения, масштаба интерфейса и фона сцены. Низкоуверенные и некорректные данные отбрасываются. Работает только с текстом, который реально виден на выбранном экране.
+Это экспериментальная реализация: распознавание зависит от шрифта, разрешения, масштаба интерфейса и видимости текста. Белые символы с чёрной обводкой лучше отделяются от цветного фона, однако яркие нейтральные детали внутри букв или поверх текста всё ещё могут мешать. Низкоуверенные и некорректные данные отбрасываются.
 
 ### English
 
-This mode does not use Lua, process-memory access or a neural network. It captures a crop from the primary display with DXGI Desktop Duplication and looks for visible `pos:`, `ang:` and `vel:` rows using pixel templates.
+This mode does not use Lua or process-memory access. It captures a screen crop with DXGI Desktop Duplication and searches for visible `pos:`, `ang:` and `vel:` rows using templates. The mask now selects light, nearly neutral pixels (white text), and matching is less sensitive to unrelated bright pixels in the scene; this should help on colourful backgrounds but cannot guarantee recognition when text is obscured.
 
 1. Enable `cl_showpos 1` in game, if the variable is available in that game build and server configuration.
 2. In the Ballistic tab, click **Select crop with mouse**. The screen is dimmed; drag a rectangle around the visible `pos:` and `ang:` rows (include `vel:` if possible), then release the left mouse button.
@@ -121,7 +121,7 @@ This mode does not use Lua, process-memory access or a neural network. It captur
 4. Check the reader status and confidence score. Invalid or low-confidence samples are rejected.
 5. The Use last pos as launch point button copies the decoded position into the trajectory origin. `pos` is Source `MainViewOrigin`, not a guaranteed muzzle location; verify camera-to-weapon offset for the vehicle.
 
-This is an experimental implementation. Recognition can vary with font rasterization, resolution, UI scaling and scene background. Invalid or low-confidence matches are rejected; only visible on-screen telemetry is used.
+This is experimental: recognition still depends on font rasterization, resolution, UI scaling and text visibility. White glyphs with a black outline are better isolated from colourful backgrounds, but bright neutral details inside or over the text can still interfere. Invalid or low-confidence matches are rejected.
 
 
 
@@ -130,24 +130,24 @@ This is an experimental implementation. Recognition can vary with font rasteriza
 ### Русский
 1. Во вкладке «Баллистика» задайте точку запуска и цель, скорость и гравитацию. Рассчитайте решение для цели. Для БМ-30 значение 4000 ед./с остаётся только оценкой из HUD аддона, а не подтверждённой скоростью ракеты.
 2. Включите `cl_showpos 1`. В Geometry Lab включите чтение с экрана и выделите область со строками `pos:` и `ang:`. Дождитесь, пока появятся распознанные координаты и углы.
-3. Переключитесь в Garry's Mod, встаньте в режим управления машиной и убедитесь, что поворот мыши управляет направлением наведения LVS. Нажмите F7.
-4. При первом включении программа короткими движениями мыши калибрует фактическую связь «мышь → yaw/pitch» с учётом настроенной чувствительности. Затем по свежим данным `cl_showpos` она малыми шагами корректирует направление к рассчитанным азимуту и углу возвышения.
+3. В списке «Окно для F7» выберите нужное приложение (Garry’s Mod выбирается автоматически, если найдено), затем выведите его на передний план. Для LVS встаньте в режим управления машиной и убедитесь, что поворот мыши управляет направлением наведения. Нажмите F7.
+4. При первом включении программа короткими движениями мыши калибрует связь «мышь → yaw/pitch» с учётом чувствительности. Затем по свежим данным `cl_showpos` она малыми шагами корректирует направление к рассчитанному азимуту и углу возвышения. На экране больше не рисуются прицельные кольца, перекрестия или линии — только небольшая панель состояния.
 5. Повторное F7 немедленно отключает автодоводку и возвращает ручное управление. При потере фокуса Garry's Mod ввод мыши приостанавливается; после возврата в игру контроллер продолжает работу. Если поменять координаты или параметры баллистики, текущая автодоводка отключается до следующего F7.
 
 **Ограничения:** контроллер управляет углами камеры через обычный относительный ввод мыши и читает `cl_showpos`; он не читает напрямую `cannon_yaw`/`cannon_pitch` из LVS и не подтверждает, что башня повторяет камеру в каждом режиме. Он работает только если LVS действительно связывает направление взгляда с наведением орудия и игра принимает синтетический ввод мыши. Если калибровка сообщает, что yaw/pitch не реагирует, приложение останавливается, а не продолжает посылать команды. В Garry's Mod переменная `m_rawinput` по умолчанию включена; она переключает игру на Raw Input, тогда как Windows `SendInput` создаёт синтетические события мыши в обычном потоке ввода. Если игра не видит тестовые движения, попробуйте вручную в консоли `m_rawinput 0`, затем снова нажмите F7. Приложение само не меняет эту переменную. Точная физика управляемой ракеты и её внешней сущности по-прежнему не моделируется.
 
-F7 зарегистрирована как глобальная клавиша Windows. Если клавиша занята другим приложением, резервный вариант работает, когда активно окно Geometry Lab. Ввод мыши отправляется только при активном процессе Garry’s Mod. В ветке `x86-64` 64-битный клиент запускается из `bin/win64/gmod.exe`; в новой ветке `dev` может использоваться `gmod_win64.exe`.
+F7 регистрируется как глобальная клавиша Windows. Если регистрация не удалась, приложение использует резервный опрос клавиши. В списке **«Окно для F7»** выберите окно, которым нужно управлять; для включения автодоводки именно оно должно быть на переднем плане. При первом запуске игра Garry’s Mod выбирается автоматически, если её окно найдено. Область `cl_showpos` по-прежнему задаётся отдельно вручную и должна соответствовать видимым строкам в выбранном окне. Ввод мыши отправляется только в выбранное окно, когда оно активно.
 
 ### English
 1. In Ballistic lab, set the launch point, target, speed and gravity, then solve for the target. For the BM-30, 4000 units/s remains an estimate copied from the addon's HUD predictor, not a verified missile speed.
 2. Enable `cl_showpos 1`. Turn on the screen reader in Geometry Lab and select the visible `pos:` and `ang:` rows. Wait until decoded coordinates and angles appear.
-3. Switch to Garry's Mod, enter the vehicle-control seat and verify that mouse look controls the LVS aiming direction. Press F7.
-4. On first activation, the app uses small mouse movements to calibrate the actual mouse-to-yaw/pitch response at the current sensitivity. It then uses fresh `cl_showpos` samples to make small corrections toward the computed azimuth and elevation.
+3. Select the desired application in **F7 target window** (Garry’s Mod is selected automatically if found) and bring it to the foreground. For LVS, enter the vehicle-control seat and verify that mouse look controls the aiming direction. Press F7.
+4. On first activation, the app uses small mouse movements to calibrate mouse-to-yaw/pitch response. It then uses fresh `cl_showpos` samples to make small corrections toward the computed azimuth and elevation. No target rings, crosshairs or guide lines are drawn over the game; only a small status panel remains.
 5. Press F7 again to immediately disable auto aim and restore manual control. Mouse input pauses when Garry's Mod loses focus and resumes when the game is foreground again. Changing ballistic coordinates or parameters stops the current auto aim until F7 is pressed again.
 
 **Limitations:** the controller steers camera angles using ordinary relative mouse input and reads `cl_showpos`; it does not directly read LVS `cannon_yaw`/`cannon_pitch`, nor can it guarantee that the turret follows the camera in every mode. It works only when LVS maps view direction to gun aiming and the game accepts synthetic mouse input. If calibration reports that yaw/pitch did not respond, the app stops instead of continuing to inject input. Garry's Mod documents `m_rawinput` as enabled by default; it selects Raw Input, while Windows `SendInput` synthesizes mouse events into the normal input stream. If the game does not see the calibration movement, try `m_rawinput 0` manually in the game console and press F7 again. The app does not change this variable itself. Guided missile physics and the external rocket entity are still not simulated.
 
-F7 is registered as a global Windows hotkey. If another application owns it, the fallback works while the Geometry Lab window is focused. Mouse input is sent only while the Garry’s Mod process is foreground. The `x86-64` branch uses `bin/win64/gmod.exe` for its 64-bit client; the newer `dev` branch may use `gmod_win64.exe`.
+F7 is registered as a global Windows hotkey. If registration fails, the app polls the key as a fallback. Select the desired **F7 target window**; that window must be foreground for auto aim to activate. Garry’s Mod is selected automatically on first launch when its window is found. The screen crop is configured separately and must contain the visible telemetry in that selected window. Mouse input is sent only to the selected foreground window.
 
 
 ## Heightfield / hillshade
