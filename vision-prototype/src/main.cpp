@@ -34,6 +34,7 @@
 #include <QPainter>
 #include <QKeyEvent>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QStatusBar>
 #include <QSignalBlocker>
