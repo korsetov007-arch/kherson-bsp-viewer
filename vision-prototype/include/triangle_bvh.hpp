@@ -29,7 +29,7 @@ public:
     void clear();
 
     bool isValid() const { return !triangles_.isEmpty() && !nodes_.isEmpty(); }
-    int triangleCount() const { return triangles_.size(); }
+    int triangleCount() const { return static_cast<int>(triangles_.size()); }
 
     // Tests a finite segment, not an infinite ray. Sky surfaces are excluded at build time.
     bool intersectSegment(const QVector3D &start, const QVector3D &end,
