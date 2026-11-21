@@ -12,7 +12,11 @@ FetchContent_Declare(
     GIT_TAG development
     GIT_SHALLOW TRUE
 )
-FetchContent_MakeAvailable(gmod_module_base)
+FetchContent_GetProperties(gmod_module_base)
+if(NOT gmod_module_base_POPULATED)
+    FetchContent_Populate(gmod_module_base)
+endif()
+add_subdirectory(${gmod_module_base_SOURCE_DIR}/include ${gmod_module_base_BINARY_DIR}/include)
 
 add_library(sbgl_bridge SHARED module.cpp)
 target_compile_features(sbgl_bridge PRIVATE cxx_std_17)
