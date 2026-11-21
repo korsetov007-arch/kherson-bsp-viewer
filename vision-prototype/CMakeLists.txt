@@ -29,6 +29,9 @@ qt_add_executable(bsp-geometry
 
 target_include_directories(bsp-geometry PRIVATE include)
 target_link_libraries(bsp-geometry PRIVATE Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(bsp-geometry PRIVATE user32)
+endif()
 
 if(MSVC)
     target_compile_options(bsp-geometry PRIVATE /W4 /permissive- /utf-8)
