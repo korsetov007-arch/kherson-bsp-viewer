@@ -183,6 +183,13 @@ void Bsp3DView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPoly
     minZ_ = std::numeric_limits<double>::max();
     maxZ_ = std::numeric_limits<double>::lowest();
 
+    bool haveFaceBounds = false;
+    bool haveDisplacementBounds = false;
+    double faceMinX = 0.0, faceMaxX = 0.0, faceMinY = 0.0, faceMaxY = 0.0;
+    double faceMinZ = 0.0, faceMaxZ = 0.0;
+    double dispMinX = 0.0, dispMaxX = 0.0, dispMinY = 0.0, dispMaxY = 0.0;
+    double dispMinZ = 0.0, dispMaxZ = 0.0;
+
     for (const BspPolygon &polygon : polygons_) {
         for (const BspVertex &vertex : polygon.vertices) {
             const Vec3 point = toVec(vertex);
@@ -201,8 +208,47 @@ void Bsp3DView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPoly
                 minZ_ = std::min(minZ_, point.z);
                 maxZ_ = std::max(maxZ_, point.z);
             }
+
+            bool &haveTypeBounds = polygon.displacementSurface
+                ? haveDisplacementBounds : haveFaceBounds;
+            double &typeMinX = polygon.displacementSurface ? dispMinX : faceMinX;
+            double &typeMaxX = polygon.displacementSurface ? dispMaxX : faceMaxX;
+            double &typeMinY = polygon.displacementSurface ? dispMinY : faceMinY;
+            double &typeMaxY = polygon.displacementSurface ? dispMaxY : faceMaxY;
+            double &typeMinZ = polygon.displacementSurface ? dispMinZ : faceMinZ;
+            double &typeMaxZ = polygon.displacementSurface ? dispMaxZ : faceMaxZ;
+            if (!haveTypeBounds) {
+                typeMinX = typeMaxX = point.x;
+                typeMinY = typeMaxY = point.y;
+                typeMinZ = typeMaxZ = point.z;
+                haveTypeBounds = true;
+            } else {
+                typeMinX = std::min(typeMinX, point.x);
+                typeMaxX = std::max(typeMaxX, point.x);
+                typeMinY = std::min(typeMinY, point.y);
+                typeMaxY = std::max(typeMaxY, point.y);
+                typeMinZ = std::min(typeMinZ, point.z);
+                typeMaxZ = std::max(typeMaxZ, point.z);
+            }
         }
     }
+
+    const QString faceBoundsText = haveFaceBounds
+        ? QStringLiteral("X[%1,%2] Y[%3,%4] Z[%5,%6]")
+              .arg(faceMinX, 0, 'f', 0).arg(faceMaxX, 0, 'f', 0)
+              .arg(faceMinY, 0, 'f', 0).arg(faceMaxY, 0, 'f', 0)
+              .arg(faceMinZ, 0, 'f', 0).arg(faceMaxZ, 0, 'f', 0)
+        : QStringLiteral("none");
+    const QString displacementBoundsText = haveDisplacementBounds
+        ? QStringLiteral("X[%1,%2] Y[%3,%4] Z[%5,%6]")
+              .arg(dispMinX, 0, 'f', 0).arg(dispMaxX, 0, 'f', 0)
+              .arg(dispMinY, 0, 'f', 0).arg(dispMaxY, 0, 'f', 0)
+              .arg(dispMinZ, 0, 'f', 0).arg(dispMaxZ, 0, 'f', 0)
+        : QStringLiteral("none");
+    setToolTip(uiText(
+        "BSP face bounds: %1\\nDisplacement bounds: %2",
+        "Границы BSP faces: %1\\nГраницы displacement: %2")
+        .arg(faceBoundsText, displacementBoundsText));
 
     if (!haveBounds) {
         centerX_ = centerY_ = centerZ_ = 0.0;
