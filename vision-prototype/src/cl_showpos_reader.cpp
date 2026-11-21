@@ -58,18 +58,24 @@ QImage thresholdWhiteText(const QImage &source) {
     QImage mask(source.size(), QImage::Format_Grayscale8);
     if (mask.isNull()) return {};
 
-    // cl_showpos uses bright, nearly neutral text. Requiring all channels to
-    // be bright rejects most coloured HUD elements and game-scene highlights.
-    constexpr int threshold = 168;
+    // cl_showpos is white with a dark outline. Accept anti-aliased light-grey
+    // pixels, but require low chroma so saturated scenery/HUD colours are
+    // rejected. The black outline makes the glyph templates more distinctive.
+    constexpr int threshold = 148;
+    constexpr int maxChannelSpread = 42;
     for (int y = 0; y < converted.height(); ++y) {
         const QRgb *src = reinterpret_cast<const QRgb *>(converted.constScanLine(y));
         uchar *dst = mask.scanLine(y);
         for (int x = 0; x < converted.width(); ++x) {
             const QRgb pixel = src[x];
-            const bool white = qRed(pixel) >= threshold &&
-                               qGreen(pixel) >= threshold &&
-                               qBlue(pixel) >= threshold;
-            dst[x] = white ? 255 : 0;
+            const int red = qRed(pixel);
+            const int green = qGreen(pixel);
+            const int blue = qBlue(pixel);
+            const int brightest = std::max({red, green, blue});
+            const int darkest = std::min({red, green, blue});
+            const bool neutralLight = darkest >= threshold &&
+                                      brightest - darkest <= maxChannelSpread;
+            dst[x] = neutralLight ? 255 : 0;
         }
     }
     return mask;
@@ -189,9 +195,17 @@ double maskDistance(const QImage &observed, int x, int y, const QImage &templ) {
             intersection += (inkA && inkB) ? 1 : 0;
         }
     }
-    const int denominator = observedInk + templateInk;
-    if (denominator == 0) return 1.0;
-    return 1.0 - (2.0 * static_cast<double>(intersection) / denominator);
+    if (templateInk == 0) return 1.0;
+
+    // The text has a black outline, but pixels outside the glyphs can still
+    // be bright in a colourful scene. Penalize missing glyph pixels strongly
+    // and unrelated bright pixels more gently instead of letting the scene
+    // dominate a Dice score.
+    const int missing = templateInk - intersection;
+    const int extra = observedInk - intersection;
+    const double missingRate = static_cast<double>(missing) / templateInk;
+    const double extraRate = static_cast<double>(extra) / std::max(1, templateInk + extra);
+    return 0.78 * missingRate + 0.22 * extraRate;
 }
 
 struct LabelMatch {
@@ -378,7 +392,7 @@ private:
         FontProfile bestProfile;
         LabelMatch bestAnchor;
         for (const QString &family : families) {
-            for (int pixelSize = 8; pixelSize <= 18; ++pixelSize) {
+            for (int pixelSize = 6; pixelSize <= 26; ++pixelSize) {
                 FontProfile candidate;
                 if (!makeFontProfile(family, pixelSize, &candidate)) continue;
                 const LabelMatch match = findLabel(mask, candidate, QStringLiteral("pos:"),
