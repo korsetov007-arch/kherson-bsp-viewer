@@ -4,7 +4,6 @@
 #include "bsp_3d_view.hpp"
 #include "ballistics_view.hpp"
 #include "live_overlay.hpp"
-#include "raw_mouse_tracker.hpp"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -24,6 +23,11 @@
 #include <QRegularExpression>
 #include <QScreen>
 #include <QTimer>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QFileInfo>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -70,10 +74,22 @@ public:
         createSettingsMenu();
         rebuildInterface();
         overlay_ = new bspvision::LiveOverlay();
-        rawInputReady_ = mouseTracker_.initialize(nativeHandleValue(winId()));
-        mouseTracker_.anglesChanged = [this](double yaw, double pitch) {
-            if (overlay_) overlay_->setCurrentAngles(yaw, pitch);
-        };
+        bridgeServer_ = new QLocalServer(this);
+        QLocalServer::removeServer(QStringLiteral("SBGLBridge"));
+        bridgeServer_->listen(QStringLiteral("SBGLBridge"));
+        connect(bridgeServer_, &QLocalServer::newConnection, this, [this] {
+            if (bridgeSocket_) { bridgeSocket_->disconnect(this); bridgeSocket_->deleteLater(); }
+            bridgeSocket_ = bridgeServer_->nextPendingConnection();
+            bridgeConnected_ = bridgeSocket_ != nullptr;
+            if (bridgeSocket_) {
+                connect(bridgeSocket_, &QLocalSocket::readyRead, this, [this] { readBridgeMessages(); });
+                connect(bridgeSocket_, &QLocalSocket::disconnected, this, [this] {
+                    bridgeConnected_ = false; bridgeTelemetry_ = {};
+                    if (bridgeSocket_) bridgeSocket_->deleteLater();
+                    bridgeSocket_ = nullptr; syncOverlay();
+                });
+            }
+        });
         overlayTimer_ = new QTimer(this);
         connect(overlayTimer_, &QTimer::timeout, this, [this] { syncOverlay(); });
         overlayTimer_->start(16);
@@ -81,8 +97,6 @@ public:
 
 public:
     ~MainWindow() override {
-        if (QCoreApplication::instance())
-            QCoreApplication::instance()->removeNativeEventFilter(&mouseTracker_);
         if (overlay_) {
             overlay_->close();
             delete overlay_;
@@ -376,7 +390,7 @@ private:
         auto *controls = new QHBoxLayout();
 
         auto *liveGroup = new QGroupBox(bspvision::uiText(
-            "External overlay · no addon", "Внешний оверлей · без аддона"), tab);
+            "Native SBGL Bridge · in-game HUD", "Нативный SBGL Bridge · игровой HUD"), tab);
         auto *liveLayout = new QVBoxLayout(liveGroup);
         currentYawInit_ = makeCoordinate(0.0, liveGroup);
         currentYawInit_->setRange(-180.0, 180.0);
@@ -415,18 +429,16 @@ private:
         addCalibrationField(calibrationRow2, QStringLiteral("m_yaw"), mYaw_);
         addCalibrationField(calibrationRow2, QStringLiteral("m_pitch"), mPitch_);
         addCalibrationField(calibrationRow2, bspvision::uiText("Horizontal FOV °", "Горизонтальный FOV °"), overlayFov_);
-        auto *pasteGetpos = new QPushButton(bspvision::uiText("Paste getpos", "Вставить getpos"), liveGroup);
         auto *startOverlay = new QPushButton(bspvision::uiText("Start overlay", "Запустить оверлей"), liveGroup);
         auto *stopOverlay = new QPushButton(bspvision::uiText("Stop overlay", "Остановить оверлей"), liveGroup);
-        calibrationRow2->addWidget(pasteGetpos);
         calibrationRow2->addWidget(startOverlay);
         calibrationRow2->addWidget(stopOverlay);
         liveLayout->addLayout(calibrationRow1);
         liveLayout->addLayout(calibrationRow2);
 
         liveStatusLabel_ = new QLabel(bspvision::uiText(
-            "Run getpos in the game console, copy its output, then paste it here. Mouse deltas are tracked only while Garry's Mod is the foreground window.",
-            "Выполните getpos в консоли игры, скопируйте вывод и вставьте сюда. Движения мыши учитываются, только когда Garry's Mod активен."), liveGroup);
+            "Install the SBGL Lua adapter and native module in GMod. The bridge connects automatically when both apps are running.",
+            "Установите Lua-адаптер SBGL и нативный модуль в GMod. Мост подключится автоматически, когда обе программы запущены."), liveGroup);
         liveStatusLabel_->setWordWrap(true);
         liveLayout->addWidget(liveStatusLabel_);
         liveTelemetryLabel_ = new QLabel(liveGroup);
@@ -434,16 +446,8 @@ private:
         liveTelemetryLabel_->setWordWrap(true);
         liveLayout->addWidget(liveTelemetryLabel_);
         layout->addWidget(liveGroup);
-        connect(pasteGetpos, &QPushButton::clicked, this, [this] { pasteGetposFromClipboard(); });
         connect(startOverlay, &QPushButton::clicked, this, [this] { startExternalOverlay(); });
         connect(stopOverlay, &QPushButton::clicked, this, [this] { stopExternalOverlay(); });
-        auto calibrationChanged = [this] {
-            mouseTracker_.setCalibration(sensitivity_->value(), mYaw_->value(), mPitch_->value());
-            syncOverlay();
-        };
-        connect(sensitivity_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [calibrationChanged](double) { calibrationChanged(); });
-        connect(mYaw_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [calibrationChanged](double) { calibrationChanged(); });
-        connect(mPitch_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [calibrationChanged](double) { calibrationChanged(); });
         connect(overlayFov_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) { syncOverlay(); });
 
         auto *launchGroup = new QGroupBox(bspvision::uiText("Launch point · Source world units", "Точка запуска · единицы Source"), tab);
@@ -638,107 +642,67 @@ private:
         syncOverlay();
     }
 
-    void pasteGetposFromClipboard() {
-        const QString clipboard = QApplication::clipboard()->text();
-        if (clipboard.trimmed().isEmpty()) {
-            QMessageBox::information(this, bspvision::uiText("Paste getpos", "Вставка getpos"),
-                bspvision::uiText("Clipboard is empty. Run getpos in the game console and copy its output first.",
-                                  "Буфер обмена пуст. Сначала выполните getpos в консоли игры и скопируйте вывод."));
-            return;
-        }
-        const QString number = QStringLiteral("([+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?)");
-        const QRegularExpression positionRe(
-            QStringLiteral("\\bsetpos(?:_exact)?\\s+") + number + QStringLiteral("\\s+") +
-            number + QStringLiteral("\\s+") + number, QRegularExpression::CaseInsensitiveOption);
-        const QRegularExpression angleRe(
-            QStringLiteral("\\bsetang\\s+") + number + QStringLiteral("\\s+") +
-            number + QStringLiteral("\\s+") + number, QRegularExpression::CaseInsensitiveOption);
-        const auto positionMatch = positionRe.match(clipboard);
-        const auto angleMatch = angleRe.match(clipboard);
-        bool gotAnything = false;
-        if (positionMatch.hasMatch()) {
-            trajectoryCalculated_ = false;
-            originX_->setValue(positionMatch.captured(1).toDouble());
-            originY_->setValue(positionMatch.captured(2).toDouble());
-            originZ_->setValue(positionMatch.captured(3).toDouble());
-            gotAnything = true;
-        }
-        if (angleMatch.hasMatch()) {
-            currentPitchInit_->setValue(angleMatch.captured(1).toDouble());
-            currentYawInit_->setValue(angleMatch.captured(2).toDouble());
-            gotAnything = true;
-        }
-        if (!gotAnything) {
-            QMessageBox::warning(this, bspvision::uiText("Could not parse getpos", "Не удалось разобрать getpos"),
-                bspvision::uiText("Expected text similar to: setpos X Y Z; setang PITCH YAW ROLL.",
-                                  "Ожидался текст вида: setpos X Y Z; setang PITCH YAW ROLL."));
-            return;
-        }
-        if (mouseTracker_.enabled()) {
-            mouseTracker_.start(currentYawInit_->value(), currentPitchInit_->value(),
-                                sensitivity_->value(), mYaw_->value(), mPitch_->value());
-        }
-        liveStatusLabel_->setText(bspvision::uiText(
-            "getpos loaded. Origin and initial view angles were filled where present. If the overlay is running, its angle estimate was re-anchored.",
-            "getpos загружен. Координаты и исходные углы заполнены. Если оверлей работает, его оценка углов сброшена на новые значения."));
-        syncOverlay();
-    }
-
     void startExternalOverlay() {
-        if (!rawInputReady_) rawInputReady_ = mouseTracker_.initialize(nativeHandleValue(winId()));
-        if (!rawInputReady_) {
-            QMessageBox::warning(this, bspvision::uiText("Raw mouse input unavailable", "Недоступен Raw Input"),
-                mouseTracker_.lastError().isEmpty()
-                    ? bspvision::uiText("Could not initialize Windows raw mouse input.", "Не удалось включить Windows Raw Input.")
-                    : mouseTracker_.lastError());
-            return;
-        }
-        mouseTracker_.start(currentYawInit_->value(), currentPitchInit_->value(),
-                            sensitivity_->value(), mYaw_->value(), mPitch_->value());
         QScreen *targetScreen = screen();
         if (!targetScreen) targetScreen = QGuiApplication::primaryScreen();
         if (targetScreen) overlay_->showOverlayOn(targetScreen->geometry());
-        overlay_->setTargetEnabled(targetDefined_ && trajectoryCalculated_);
-        liveStatusLabel_->setText(bspvision::uiText(
-            "Overlay is on. Switch to Garry's Mod; tracking updates only while the game is foreground. Borderless fullscreen is recommended.",
-            "Оверлей включён. Переключитесь в Garry's Mod: углы обновляются, только когда игра на переднем плане. Рекомендуется безрамочный полноэкранный режим."));
         syncOverlay();
     }
 
     void stopExternalOverlay() {
-        mouseTracker_.stop();
         if (overlay_) overlay_->hide();
-        liveStatusLabel_->setText(bspvision::uiText("Overlay stopped.", "Оверлей остановлен."));
+        syncOverlay();
+    }
+
+    void readBridgeMessages() {
+        if (!bridgeSocket_) return;
+        while (bridgeSocket_->canReadLine()) {
+            const auto doc = QJsonDocument::fromJson(bridgeSocket_->readLine().trimmed());
+            if (!doc.isObject()) continue;
+            const auto msg = doc.object();
+            if (msg.value("type").toString() != "telemetry") continue;
+            bridgeTelemetry_ = msg;
+            const auto player = msg.value("player").toObject();
+            const auto angles = player.value("eye_angles").toObject();
+            if (!angles.isEmpty()) {
+                if (currentYawInit_) currentYawInit_->setValue(angles.value("yaw").toDouble());
+                if (currentPitchInit_) currentPitchInit_->setValue(angles.value("pitch").toDouble());
+            }
+            const auto pos = player.value("position").toObject();
+            if (!pos.isEmpty() && originX_ && originY_ && originZ_) {
+                originX_->setValue(pos.value("x").toDouble());
+                originY_->setValue(pos.value("y").toDouble());
+                originZ_->setValue(pos.value("z").toDouble());
+            }
+            const auto lvs = msg.value("lvs").toObject();
+            if (liveTelemetryLabel_) liveTelemetryLabel_->setText(
+                QString("LVS: %1 · handler: %2").arg(
+                    lvs.value("vehicle_class").toString("not detected"),
+                    lvs.value("weapon_handler_class").toString("not detected")));
+        }
         syncOverlay();
     }
 
     void syncOverlay() {
         if (!overlay_) return;
-        mouseTracker_.refreshForegroundState();
-        overlay_->setCurrentAngles(mouseTracker_.yawDeg(), mouseTracker_.sourcePitchDeg());
+        double cy = currentYawInit_ ? currentYawInit_->value() : 0.0;
+        double cp = currentPitchInit_ ? currentPitchInit_->value() : 0.0;
+        const auto player = bridgeTelemetry_.value("player").toObject();
+        const auto angles = player.value("eye_angles").toObject();
+        if (!angles.isEmpty()) { cy = angles.value("yaw").toDouble(cy); cp = angles.value("pitch").toDouble(cp); }
+        overlay_->setCurrentAngles(cy, cp);
         overlay_->setDesiredAngles(yaw_ ? yaw_->value() : 0.0, pitch_ ? -pitch_->value() : 0.0);
         overlay_->setHorizontalFov(overlayFov_ ? overlayFov_->value() : 90.0);
-        const double range = (originX_ && targetX_)
-            ? std::hypot(targetX_->value() - originX_->value(), targetY_->value() - originY_->value())
-            : 0.0;
+        const double range = originX_ && targetX_ ? std::hypot(targetX_->value()-originX_->value(), targetY_->value()-originY_->value()) : 0.0;
         overlay_->setTargetDetails(range, flightTime_ ? flightTime_->value() : 0.0, loadedMapName_);
-        overlay_->setTargetEnabled(mouseTracker_.enabled() && mouseTracker_.gameForeground()
-                                  && targetDefined_ && trajectoryCalculated_);
-        QString state;
-        if (!mouseTracker_.enabled()) {
-            state = bspvision::uiText("Tracking stopped", "Отслеживание остановлено");
-        } else if (mouseTracker_.gameForeground()) {
-            state = bspvision::uiText("GMod focused", "Игра активна");
-        } else {
-            state = bspvision::uiText("Waiting for GMod focus", "Ожидаем фокус игры");
-        }
-        if (liveTelemetryLabel_) {
-            liveTelemetryLabel_->setText(bspvision::uiText(
-                "Estimated yaw %1° · pitch %2° · %3",
-                "Расчётные yaw %1° · pitch %2° · %3")
-                .arg(mouseTracker_.yawDeg(), 0, 'f', 2)
-                .arg(mouseTracker_.sourcePitchDeg(), 0, 'f', 2)
-                .arg(state));
+        const bool enabled = targetDefined_ && trajectoryCalculated_;
+        overlay_->setTargetEnabled(enabled);
+        const QString state = bridgeConnected_ ? QStringLiteral("Native bridge connected") : QStringLiteral("Waiting for native bridge");
+        if (liveStatusLabel_) liveStatusLabel_->setText(state);
+        if (bridgeSocket_ && bridgeSocket_->state() == QLocalSocket::ConnectedState) {
+            QJsonObject cmd{{"type","target"},{"enabled",enabled},{"yaw",yaw_ ? yaw_->value() : 0.0},{"pitch",pitch_ ? -pitch_->value() : 0.0}};
+            bridgeSocket_->write(QJsonDocument(cmd).toJson(QJsonDocument::Compact) + "\n");
+            bridgeSocket_->flush();
         }
         overlay_->setTrackingStatus(state);
     }
@@ -791,8 +755,10 @@ private:
     QDoubleSpinBox *sensitivity_ = nullptr, *mYaw_ = nullptr, *mPitch_ = nullptr, *overlayFov_ = nullptr;
     QTimer *overlayTimer_ = nullptr;
     bspvision::LiveOverlay *overlay_ = nullptr;
-    bspvision::RawMouseTracker mouseTracker_;
-    bool rawInputReady_ = false;
+    QLocalServer *bridgeServer_ = nullptr;
+    QLocalSocket *bridgeSocket_ = nullptr;
+    QJsonObject bridgeTelemetry_;
+    bool bridgeConnected_ = false;
     QString loadedMapName_;
     int pickMode_ = 0;
     bool targetDefined_ = false;
