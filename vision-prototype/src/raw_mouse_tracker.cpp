@@ -1,9 +1,10 @@
 #include "raw_mouse_tracker.hpp"
 
+#include <QCoreApplication>
 #include <QDateTime>
-#include <QFileInfo>
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 
 #ifdef Q_OS_WIN
@@ -111,6 +112,10 @@ bool RawMouseTracker::isGModForeground() {
     gameForeground_ = false;
     return false;
 #endif
+}
+
+bool RawMouseTracker::refreshForegroundState() {
+    return isGModForeground();
 }
 
 bool RawMouseTracker::nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) {
