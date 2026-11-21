@@ -1295,7 +1295,10 @@ private:
         if (!ok) return false;
         const QString executable =
             QFileInfo(QString::fromWCharArray(imagePath, static_cast<qsizetype>(pathLength))).fileName();
-        return executable.compare(QStringLiteral("gmod.exe"), Qt::CaseInsensitive) == 0;
+        // Current Windows installs can run either the classic client or the
+        // newer 64-bit executable introduced for the Windows client.
+        return executable.compare(QStringLiteral("gmod.exe"), Qt::CaseInsensitive) == 0 ||
+               executable.compare(QStringLiteral("gmod_win64.exe"), Qt::CaseInsensitive) == 0;
 #else
         return false;
 #endif
