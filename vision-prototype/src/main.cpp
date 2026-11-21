@@ -14,6 +14,13 @@
 #include <QMenuBar>
 #include <QSettings>
 #include <QApplication>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSaveFile>
+#include <QTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDoubleSpinBox>
@@ -35,6 +42,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <QVector3D>
 #include <QtMath>
 
@@ -48,8 +56,12 @@ public:
         const QString savedLanguage = settings.value(QStringLiteral("language"), defaultLanguage).toString();
         bspvision::setUiLanguage(savedLanguage == QStringLiteral("ru")
             ? bspvision::UiLanguage::Russian : bspvision::UiLanguage::English);
+        gmodDataPath_ = settings.value(QStringLiteral("gmodDataPath")).toString();
         createSettingsMenu();
         rebuildInterface();
+        livePollTimer_ = new QTimer(this);
+        connect(livePollTimer_, &QTimer::timeout, this, [this] { pollLiveGMod(); });
+        livePollTimer_->start(100);
     }
 
 private:
@@ -111,6 +123,8 @@ private:
         meshView_ = nullptr;
         ballisticsView_ = nullptr;
         ballisticsSummary_ = nullptr;
+        liveStatusLabel_ = nullptr;
+        liveTelemetryLabel_ = nullptr;
         showSkyboxCheck_ = nullptr;
         originX_ = originY_ = originZ_ = nullptr;
         targetX_ = targetY_ = targetZ_ = nullptr;
@@ -323,6 +337,25 @@ private:
         auto *layout = new QVBoxLayout(tab);
         auto *controls = new QHBoxLayout();
 
+        auto *liveGroup = new QGroupBox(bspvision::uiText("Garry's Mod live link", "Связь с Garry's Mod в реальном времени"), tab);
+        auto *liveLayout = new QVBoxLayout(liveGroup);
+        auto *liveActions = new QHBoxLayout();
+        auto *chooseGmodData = new QPushButton(bspvision::uiText(
+            "Select garrysmod/data folder…", "Выбрать папку garrysmod/data…"), liveGroup);
+        liveActions->addWidget(chooseGmodData);
+        liveStatusLabel_ = new QLabel(bspvision::uiText(
+            "Not connected. Select the Garry's Mod garrysmod/data folder and install the client addon.",
+            "Не подключено. Выберите папку garrysmod/data и установите клиентский аддон."), liveGroup);
+        liveStatusLabel_->setWordWrap(true);
+        liveActions->addWidget(liveStatusLabel_, 1);
+        liveLayout->addLayout(liveActions);
+        liveTelemetryLabel_ = new QLabel(liveGroup);
+        liveTelemetryLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        liveTelemetryLabel_->setWordWrap(true);
+        liveLayout->addWidget(liveTelemetryLabel_);
+        layout->addWidget(liveGroup);
+        connect(chooseGmodData, &QPushButton::clicked, this, [this] { chooseGmodDataFolder(); });
+
         auto *launchGroup = new QGroupBox(bspvision::uiText("Launch point · Source world units", "Точка запуска · единицы Source"), tab);
         auto *launchForm = new QFormLayout(launchGroup);
         originX_ = makeCoordinate(0.0, launchGroup);
@@ -377,7 +410,7 @@ private:
         auto *calculate = new QPushButton(bspvision::uiText("Calculate current arc", "Рассчитать текущую дугу"), tab);
         auto *solveLow = new QPushButton(bspvision::uiText("Solve target · low arc", "Решить для цели · низкая дуга"), tab);
         auto *solveHigh = new QPushButton(bspvision::uiText("Solve target · high arc", "Решить для цели · высокая дуга"), tab);
-        auto *clear = new QPushButton(bspvision::uiText("Clear path", "Очистить траекторию"), tab);
+        auto *clear = new QPushButton(bspvision::uiText("Clear path / aim target", "Очистить траекторию / цель"), tab);
         actions->addWidget(calculate);
         actions->addWidget(solveLow);
         actions->addWidget(solveHigh);
@@ -410,7 +443,9 @@ private:
         connect(clear, &QPushButton::clicked, this, [this] {
             ballisticsView_->clearTrajectory();
             trajectoryCalculated_ = false;
-            ballisticsSummary_->setText(bspvision::uiText("Trajectory cleared.", "Траектория очищена."));
+            targetDefined_ = false;
+            writeAimState(false, QStringLiteral("No target selected"));
+            ballisticsSummary_->setText(bspvision::uiText("Trajectory and live aim target cleared.", "Траектория и цель для HUD очищены."));
         });
     }
 
@@ -422,6 +457,7 @@ private:
         double pitch = qDegreesToRadians(pitch_->value());
         double duration = flightTime_->value();
         targetDefined_ = targetDefined_ || solveTarget;
+        if (solveTarget) highArcSelected_ = highArc;
 
         if (solveTarget) {
             const double dx = tx - ox, dy = ty - oy, dz = tz - oz;
@@ -486,8 +522,198 @@ private:
             .arg(duration, 0, 'f', 2)
             .arg(end.x(), 0, 'f', 1).arg(end.y(), 0, 'f', 1).arg(end.z(), 0, 'f', 1);
         if (targetDefined_) summary += bspvision::uiText(" Ideal endpoint error: %1 units.", " Ошибка в конечной точке: %1 ед.").arg(miss, 0, 'f', 1);
-        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. This is a visual planning aid, not a live-game controller.", " Зелёный = запуск, красный = цель, янтарный = траектория. Это визуальный планировщик, он не управляет игрой.");
+        summary += bspvision::uiText(" Green = launch, red = target, amber = trajectory. When the GMod link is connected, the client HUD can show the calculated angle.", " Зелёный = запуск, красный = цель, янтарный = траектория. При подключении к GMod клиентский HUD показывает рассчитанный угол.");
         ballisticsSummary_->setText(summary);
+    }
+
+    void chooseGmodDataFolder() {
+        const QString selected = QFileDialog::getExistingDirectory(
+            this,
+            bspvision::uiText("Select Garry's Mod garrysmod/data folder",
+                              "Выберите папку Garry's Mod garrysmod/data"),
+            gmodDataPath_);
+        if (selected.isEmpty()) return;
+
+        gmodDataPath_ = QDir(selected).absolutePath();
+        QSettings settings(QStringLiteral("SourceBSPTools"), QStringLiteral("GeometryLab"));
+        settings.setValue(QStringLiteral("gmodDataPath"), gmodDataPath_);
+        QDir().mkpath(QDir(gmodDataPath_).filePath(QStringLiteral("source_bsp_geometry_lab")));
+        liveStatusMessage_ = bspvision::uiText(
+            "Data folder saved. Waiting for the client addon telemetry…",
+            "Папка сохранена. Ожидаем телеметрию клиентского аддона…");
+        updateLiveLabels();
+        pollLiveGMod();
+    }
+
+    void updateLiveLabels() {
+        if (liveStatusLabel_) liveStatusLabel_->setText(liveStatusMessage_);
+        if (liveTelemetryLabel_) liveTelemetryLabel_->setText(liveTelemetryMessage_);
+    }
+
+    void writeAimState(bool active, const QString &reason = {}) {
+        if (gmodDataPath_.isEmpty()) return;
+        const QString exchangeDir = QDir(gmodDataPath_).filePath(QStringLiteral("source_bsp_geometry_lab"));
+        if (!QDir().mkpath(exchangeDir)) return;
+
+        QJsonObject state;
+        state.insert(QStringLiteral("version"), 1);
+        state.insert(QStringLiteral("timestamp"), QDateTime::currentSecsSinceEpoch());
+        state.insert(QStringLiteral("active"), active);
+        state.insert(QStringLiteral("reason"), reason);
+        state.insert(QStringLiteral("map"), liveMapName_);
+        if (active) {
+            QJsonObject target;
+            target.insert(QStringLiteral("x"), targetX_ ? targetX_->value() : 0.0);
+            target.insert(QStringLiteral("y"), targetY_ ? targetY_->value() : 0.0);
+            target.insert(QStringLiteral("z"), targetZ_ ? targetZ_->value() : 0.0);
+            state.insert(QStringLiteral("target"), target);
+            state.insert(QStringLiteral("desiredYaw"), yaw_ ? yaw_->value() : 0.0);
+            // Source/GMod view pitch is positive downward; ballistic elevation is positive upward.
+            state.insert(QStringLiteral("desiredPitch"), pitch_ ? -pitch_->value() : 0.0);
+            state.insert(QStringLiteral("yawDeg"), yaw_ ? yaw_->value() : 0.0);
+            state.insert(QStringLiteral("elevationDeg"), pitch_ ? pitch_->value() : 0.0);
+            state.insert(QStringLiteral("range"), liveRange_);
+            state.insert(QStringLiteral("flightSeconds"), flightTime_ ? flightTime_->value() : 0.0);
+        }
+
+        QSaveFile file(QDir(exchangeDir).filePath(QStringLiteral("aim.json")));
+        if (!file.open(QIODevice::WriteOnly)) return;
+        file.write(QJsonDocument(state).toJson(QJsonDocument::Compact));
+        file.commit();
+    }
+
+    void pollLiveGMod() {
+        if (gmodDataPath_.isEmpty()) {
+            liveConnected_ = false;
+            liveStatusMessage_ = bspvision::uiText(
+                "Not connected. Select the Garry's Mod garrysmod/data folder.",
+                "Не подключено. Выберите папку Garry's Mod garrysmod/data.");
+            liveTelemetryMessage_.clear();
+            updateLiveLabels();
+            return;
+        }
+
+        const QString exchangeDir = QDir(gmodDataPath_).filePath(QStringLiteral("source_bsp_geometry_lab"));
+        const QString telemetryPath = QDir(exchangeDir).filePath(QStringLiteral("telemetry.json"));
+        QFileInfo telemetryInfo(telemetryPath);
+        const qint64 ageMs = telemetryInfo.exists()
+            ? QDateTime::currentDateTime().toMSecsSinceEpoch() - telemetryInfo.lastModified().toMSecsSinceEpoch()
+            : std::numeric_limits<qint64>::max();
+        if (!telemetryInfo.exists() || ageMs < 0 || ageMs > 2500) {
+            liveConnected_ = false;
+            liveStatusMessage_ = bspvision::uiText(
+                "Waiting for telemetry. Install the client addon, start Garry's Mod, and check the selected data folder.",
+                "Ожидаем телеметрию. Установите клиентский аддон, запустите Garry's Mod и проверьте выбранную папку.");
+            liveTelemetryMessage_.clear();
+            updateLiveLabels();
+            writeAimState(false, QStringLiteral("Telemetry unavailable"));
+            return;
+        }
+
+        QFile file(telemetryPath);
+        if (!file.open(QIODevice::ReadOnly)) return;
+        QJsonParseError parseError;
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+        file.close();
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) return;
+        const QJsonObject data = document.object();
+        const QJsonObject angles = data.value(QStringLiteral("angles")).toObject();
+        QJsonObject shootPos = data.value(QStringLiteral("shootPos")).toObject();
+        if (!shootPos.contains(QStringLiteral("x"))) shootPos = data.value(QStringLiteral("eyePos")).toObject();
+        if (!shootPos.contains(QStringLiteral("x"))) shootPos = data.value(QStringLiteral("playerPos")).toObject();
+        if (!shootPos.contains(QStringLiteral("x"))) {
+            writeAimState(false, QStringLiteral("Telemetry has no position"));
+            return;
+        }
+
+        liveConnected_ = true;
+        liveMapName_ = data.value(QStringLiteral("map")).toString();
+        liveX_ = shootPos.value(QStringLiteral("x")).toDouble();
+        liveY_ = shootPos.value(QStringLiteral("y")).toDouble();
+        liveZ_ = shootPos.value(QStringLiteral("z")).toDouble();
+        liveYaw_ = angles.value(QStringLiteral("yaw")).toDouble();
+        livePitch_ = angles.value(QStringLiteral("pitch")).toDouble();
+
+        if (originX_) originX_->setValue(liveX_);
+        if (originY_) originY_->setValue(liveY_);
+        if (originZ_) originZ_->setValue(liveZ_);
+
+        liveTelemetryMessage_ = bspvision::uiText(
+            "Map: %1 · launch XYZ: %2, %3, %4 · camera yaw/pitch: %5° / %6°",
+            "Карта: %1 · начало XYZ: %2, %3, %4 · углы камеры yaw/pitch: %5° / %6°")
+            .arg(liveMapName_.isEmpty() ? QStringLiteral("—") : liveMapName_)
+            .arg(liveX_, 0, 'f', 1).arg(liveY_, 0, 'f', 1).arg(liveZ_, 0, 'f', 1)
+            .arg(liveYaw_, 0, 'f', 1).arg(livePitch_, 0, 'f', 1);
+
+        if (!targetDefined_) {
+            liveStatusMessage_ = bspvision::uiText(
+                "Connected. Choose a target on the BSP map, set its Z height, then solve for a low/high arc.",
+                "Подключено. Выберите цель на BSP-карте, задайте её высоту Z и рассчитайте низкую/высокую дугу.");
+            writeAimState(false, QStringLiteral("No target selected"));
+        } else {
+            const double dx = targetX_->value() - liveX_;
+            const double dy = targetY_->value() - liveY_;
+            const double dz = targetZ_->value() - liveZ_;
+            const double range = std::hypot(dx, dy);
+            const double speed = speed_->value();
+            const double gravity = gravity_->value();
+            QString solveError;
+            double yawRad = std::atan2(dy, dx);
+            double pitchRad = 0.0;
+            double duration = 0.0;
+            bool solved = true;
+
+            if (range < 0.01) {
+                solved = false;
+                solveError = bspvision::uiText("Target is too close to the launch point.", "Цель слишком близко к точке запуска.");
+            } else if (speed <= 0.01) {
+                solved = false;
+                solveError = bspvision::uiText("Projectile speed must be positive.", "Скорость снаряда должна быть положительной.");
+            } else if (gravity <= 0.0) {
+                pitchRad = std::atan2(dz, range);
+            } else {
+                const double v2 = speed * speed;
+                const double discriminant = v2 * v2 - gravity * (gravity * range * range + 2.0 * dz * v2);
+                if (discriminant < 0.0) {
+                    solved = false;
+                    solveError = bspvision::uiText(
+                        "Target is outside the ideal range for these speed/gravity values.",
+                        "Цель недостижима при заданных скорости и гравитации.");
+                } else {
+                    const double root = std::sqrt(discriminant);
+                    const double tangent = (v2 + (highArcSelected_ ? root : -root)) / (gravity * range);
+                    pitchRad = std::atan(tangent);
+                }
+            }
+
+            if (solved) {
+                const double horizontalSpeed = speed * std::cos(pitchRad);
+                if (horizontalSpeed <= 0.01) {
+                    solved = false;
+                    solveError = bspvision::uiText("Computed arc is too steep.", "Рассчитанная дуга слишком крутая.");
+                } else {
+                    duration = range / horizontalSpeed;
+                }
+            }
+
+            if (!solved) {
+                liveRange_ = range;
+                liveStatusMessage_ = bspvision::uiText("Connected, but no solution: %1", "Подключено, но решения нет: %1").arg(solveError);
+                writeAimState(false, solveError);
+            } else {
+                liveRange_ = range;
+                yaw_->setValue(qRadiansToDegrees(yawRad));
+                pitch_->setValue(qRadiansToDegrees(pitchRad));
+                flightTime_->setValue(std::clamp(duration, 0.05, 30.0));
+                calculateArc(false);
+                liveStatusMessage_ = bspvision::uiText(
+                    "Connected · live solution active · range %1 · flight %2 s",
+                    "Подключено · расчёт активен · дальность %1 · полёт %2 с")
+                    .arg(range, 0, 'f', 0).arg(duration, 0, 'f', 2);
+                writeAimState(true);
+            }
+        }
+        updateLiveLabels();
     }
 
     void populateLumpTable() {
@@ -533,6 +759,16 @@ private:
     QDoubleSpinBox *originX_ = nullptr, *originY_ = nullptr, *originZ_ = nullptr;
     QDoubleSpinBox *targetX_ = nullptr, *targetY_ = nullptr, *targetZ_ = nullptr;
     QDoubleSpinBox *speed_ = nullptr, *gravity_ = nullptr, *yaw_ = nullptr, *pitch_ = nullptr, *flightTime_ = nullptr;
+    QLabel *liveStatusLabel_ = nullptr, *liveTelemetryLabel_ = nullptr;
+    QTimer *livePollTimer_ = nullptr;
+    QString gmodDataPath_;
+    QString liveStatusMessage_;
+    QString liveTelemetryMessage_;
+    QString liveMapName_;
+    bool liveConnected_ = false;
+    bool highArcSelected_ = false;
+    double liveX_ = 0.0, liveY_ = 0.0, liveZ_ = 0.0;
+    double liveYaw_ = 0.0, livePitch_ = 0.0, liveRange_ = 0.0;
     int pickMode_ = 0;
     bool targetDefined_ = false;
     bspvision::BspFile bspFile_;
