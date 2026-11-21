@@ -9,7 +9,7 @@
 - Skybox-material detection with a toggle to show/hide sky-textured faces.
 - Russian/English interface with a persistent language setting.
 - Offline projectile-trajectory visualization with low/high ballistic-angle solving.
-- Optional local Garry's Mod client addon: camera/player telemetry, target-angle HUD marker, and no server-side addon requirement.
+- Optional transparent Windows overlay, drawn by the desktop app itself (no Lua addon): live direction marker driven by calibrated raw mouse movement.
 - No OpenCV or computer-vision dependency in the native desktop app.
 
 ## Native Windows app
@@ -24,9 +24,9 @@ See [the desktop application README](vision-prototype/README.md) for prerequisit
 
 Open [index.html](index.html) in a modern browser and select a local `.bsp` file. The browser viewer is kept as a separate lightweight option.
 
-## Garry's Mod live link
+## Live overlay / Оверлей в игре
 
-An optional clientside addon and bilingual install guide are in [gmod-addon](gmod-addon/README.md). It exchanges local JSON files in `garrysmod/data/source_bsp_geometry_lab/`; both the desktop app and game must run on the same Windows account, and the loaded BSP filename must match the active game map. The HUD marker is only a visual indicator; it does not control input or fire.
+The optional external overlay is documented in [docs/EXTERNAL_OVERLAY_RU_EN.md](docs/EXTERNAL_OVERLAY_RU_EN.md). It uses Windows Raw Input and draws a transparent, click-through Qt window; it requires no Garry's Mod addon or server changes. It estimates view angles from the initial `getpos` angles plus mouse deltas, so set the game's sensitivity, `m_yaw`, `m_pitch` and FOV correctly. It does not read the game's internal camera state, and camera changes unrelated to mouse input can cause drift.
 
 ## Technical scope
 
