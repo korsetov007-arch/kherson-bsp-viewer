@@ -83,17 +83,14 @@ LUA_FUNCTION(BridgePoll) {
 }
 
 GMOD_MODULE_OPEN() {
-    LUA->PushSpecial(SPECIAL_GLOB);
-    LUA->PushString("connect");
+    LUA->CreateTable();
     LUA->PushCFunction(BridgeConnect);
-    LUA->SetTable(-3);
-    LUA->PushString("send");
+    LUA->SetField(-2, "connect");
     LUA->PushCFunction(BridgeSend);
-    LUA->SetTable(-3);
-    LUA->PushString("poll");
+    LUA->SetField(-2, "send");
     LUA->PushCFunction(BridgePoll);
-    LUA->SetTable(-3);
-    return 0;
+    LUA->SetField(-2, "poll");
+    return 1;
 }
 
 GMOD_MODULE_CLOSE() {
