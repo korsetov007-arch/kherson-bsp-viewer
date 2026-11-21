@@ -1,23 +1,23 @@
-# BSP Geometry & Ballistics — architecture
+# Source BSP Geometry Lab — architecture
 
 ## Application structure
 
-- **Qt 6 / C++20 desktop shell** in src/main.cpp; exposes BSP geometry and ballistic planning tabs.
-- **BSP parser** in src/bsp_file.cpp; validates the Source BSP v20 header and lump ranges, then extracts geometry records.
-- **Top-down map view** in src/bsp_map_view.cpp; draws face outlines in XY and reports the XY coordinate under the cursor.
-- **3D map preview** in src/bsp_3d_view.cpp; provides drag-to-rotate and wheel-to-zoom interaction using a lightweight painter-based projection.
-- **Ballistic view** in src/ballistics_view.cpp; displays trajectory samples in XY, XZ, and oblique 3D projections.
-- **Parser tests** in tests/bsp_file_tests.cpp; exercise header parsing, geometry reconstruction, and invalid-input handling.
+- **Qt 6 / C++20 desktop UI** in `src/main.cpp`, including persistent English/Russian language settings and a sky-surface visibility toggle.
+- **Language helper** in `include/app_language.hpp`; the active language is shared by the main window, parser and visualizations.
+- **BSP parser** in `src/bsp_file.cpp`; validates Source BSP v20 headers and lump ranges, extracts vertices/edges/surfedges/faces, and resolves face material names through texture-info, texture-data and string-table lumps.
+- **Skybox handling:** face material names matching common Source sky patterns are marked as sky surfaces and excluded from geometry views by default. The UI can enable them for inspection.
+- **Top-down map view** in `src/bsp_map_view.cpp`; renders XY polygons, uses visible geometry for bounds, and reports clicked XY coordinates.
+- **3D map preview** in `src/bsp_3d_view.cpp`; drag-to-rotate and wheel-to-zoom, with bounds computed from the currently visible polygons.
+- **Ballistic view** in `src/ballistics_view.cpp`; draws trajectory in XY, XZ and oblique 3D projections, with the visible BSP geometry overlaid.
+- **Parser tests** in `tests/bsp_file_tests.cpp`; include BSP header/geometry validation, texture metadata resolution, sky face filtering, and invalid-input handling.
 
 ## Ballistic model
 
-The UI accepts launch and target coordinates plus projectile speed, gravity, yaw, pitch/elevation, and flight time. The target solver computes low/high ideal elevation angles under constant gravity when a solution exists. The trajectory preview is calculated locally and is not connected to game input.
+The UI accepts start/target XYZ coordinates, speed, gravity, yaw, elevation and flight time. The solver computes low/high ideal elevation angles under constant gravity where a solution exists. Calculations remain local; the preview is not connected to game input.
 
-The model does not include collisions, map occlusion, air drag, splash radius, weapon-specific effects, or engine/server physics. The BSP top-down view provides only X/Y, so Z must be chosen explicitly when multiple floors or ceilings may share the same horizontal location.
+## Known limitations
 
-## Validation and limitations
-
-- BSP version 20 is the only supported format in this prototype.
-- Materials and textures are not rendered; surfaces are represented by face outlines.
-- The 3D preview is not a z-buffer renderer, so intersecting or back-facing geometry may overlap imperfectly.
-- Synthetic tests cover parser validation and geometry reconstruction. Runtime behavior should still be checked with representative BSP files and known coordinate points.
+- Only BSP version 20 is supported.
+- This is not a full Source engine renderer: it does not render material textures, use a GPU z-buffer, or reproduce engine skybox rendering.
+- Sky-surface classification relies on texture names encoded in the BSP; incomplete or unusual metadata may prevent a match.
+- The ballistic model does not simulate collision, map occlusion, drag, splash radius, weapon-specific behavior or engine/server physics.
