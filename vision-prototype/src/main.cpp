@@ -589,6 +589,7 @@ private:
         });
         connect(pickLandmarkButton_, &QPushButton::clicked, this, [this] {
             if (!bspFile_.isLoaded()) return;
+            pickMode_ = 0;
             landmarkPickMode_ = true;
             statusBar()->showMessage(bspvision::uiText(
                 "Click the landmark location on the top-down BSP map. Set its Z height in the Landmark Z field.",
@@ -1002,11 +1003,13 @@ private:
         tabs->addTab(tab, bspvision::uiText("Ballistic lab", "Баллистика"));
 
         connect(pickOrigin, &QPushButton::clicked, this, [this, tabs] {
+            landmarkPickMode_ = false;
             pickMode_ = 1;
             tabs->setCurrentIndex(0);
             statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set launch X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y запуска; координату Z задайте во вкладке баллистики."));
         });
         connect(pickTarget, &QPushButton::clicked, this, [this, tabs] {
+            landmarkPickMode_ = false;
             pickMode_ = 2;
             tabs->setCurrentIndex(0);
             statusBar()->showMessage(bspvision::uiText("Click the top-down XY map to set target X/Y; set Z in Ballistic lab.", "Нажмите на карту сверху для выбора X/Y цели; координату Z задайте во вкладке баллистики."));
