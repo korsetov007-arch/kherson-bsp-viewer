@@ -225,11 +225,9 @@ void LiveOverlay::paintEvent(QPaintEvent *event) {
                      uiText("SOURCE BSP GEOMETRY LAB  ·  EXTERNAL OVERLAY",
                             "SOURCE BSP GEOMETRY LAB  ·  ВНЕШНИЙ ОВЕРЛЕЙ"));
     painter.setPen(accent);
-    const QString instruction = offScreen
-        ? uiText("TURN  ·  Δ yaw %1°  ·  Δ pitch %2°", "ПОВОРОТ  ·  Δ азимут %1°  ·  Δ наклон %2°")
-              .arg(yawDelta, 0, 'f', 1).arg(pitchDelta, 0, 'f', 1)
-        : uiText("Δ yaw %1°  ·  Δ pitch %2°", "Δ азимут %1°  ·  Δ наклон %2°")
-              .arg(yawDelta, 0, 'f', 1).arg(pitchDelta, 0, 'f', 1);
+    const QString instruction = landmarkEnabled_
+        ? uiText("Aiming ring: GREEN = centered · F7 toggles", "Круг наведения: ЗЕЛЁНЫЙ = наведено · F7 включает/выключает")
+        : uiText("Trajectory aim indicator", "Индикатор наведения по траектории");
     painter.drawText(QRectF(panelRect.x() + 11, panelRect.y() + 29, panelRect.width() - 22, 18),
                      Qt::AlignLeft | Qt::AlignVCenter, instruction);
     painter.setPen(QColor(235, 239, 245));
