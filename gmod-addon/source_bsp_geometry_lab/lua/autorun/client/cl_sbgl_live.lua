@@ -90,9 +90,10 @@ timer.Create("SBGL_LiveExchange", POLL_INTERVAL, 0, function()
 end)
 
 concommand.Add("sbgl_hud_toggle", function()
-    hudEnabled:SetBool(not hudEnabled:GetBool())
+    local nextValue = hudEnabled:GetBool() and "0" or "1"
+    RunConsoleCommand("sbgl_hud_enabled", nextValue)
     chat.AddText(Color(90, 210, 255), "[SBGL] ",
-        color_white, "Live marker ", hudEnabled:GetBool() and "enabled" or "disabled",
+        color_white, "Live marker ", nextValue == "1" and "enabled" or "disabled",
         ". Console variable: sbgl_hud_enabled")
 end)
 
