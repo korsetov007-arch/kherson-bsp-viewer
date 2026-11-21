@@ -11,6 +11,7 @@
 - **Ballistic view** in `src/ballistics_view.cpp`; draws trajectory in XY, XZ and oblique 3D projections, with the visible BSP geometry overlaid.
 - **Parser tests** in `tests/bsp_file_tests.cpp`; include BSP header/geometry validation, texture metadata resolution, sky face filtering, and invalid-input handling.
 - **Screen fallback** in `src/cl_showpos_reader.cpp`; DXGI Desktop Duplication captures a configurable crop on the primary display, a binary pixel-template matcher anchors on the `pos:` label and decodes numeric cells, then numeric/range validation produces a confidence-scored sample. The parser is tested independently of the desktop capture device.
+- **Heightfield** in `src/heightfield.cpp`; rasterizes upward-facing BSP/displacement triangles into minimum-ground and maximum-canopy layers, generates a hillshade, and caches 128/256-unit contour lines with marching squares. The 2D view can display the hillshade on demand.
 
 ## Ballistic model
 
@@ -22,4 +23,5 @@ The UI accepts start/target XYZ coordinates, speed, gravity, yaw, elevation and 
 - This is not a full Source engine renderer: it does not render material textures, use a GPU z-buffer, or reproduce engine skybox rendering.
 - Sky-surface classification relies on texture names encoded in the BSP; incomplete or unusual metadata may prevent a match.
 - The ballistic model does not simulate collision, map occlusion, drag, splash radius, weapon-specific behavior or engine/server physics.
+- Heightfield cells are point samples at finite resolution and only currently rasterize upward-facing surfaces; they are not a substitute for Source brush/prop collision or an exact line trace.
 - The screen fallback currently supports the primary display only. It depends on `cl_showpos` being visible and on matching the rendered font; low-confidence samples are rejected. `pos` is the view origin, not necessarily the weapon muzzle.
