@@ -9,7 +9,7 @@
 - Skybox-material detection with a toggle to show/hide sky-textured faces.
 - Russian/English interface with a persistent language setting.
 - Offline projectile-trajectory visualization with low/high ballistic-angle solving.
-- Optional transparent Windows overlay, drawn by the desktop app itself (no Lua addon): live direction marker driven by calibrated raw mouse movement.
+- Optional live bridge for Garry's Mod: Qt local named pipe, native Lua binary module, LVS telemetry adapter and in-game HUD marker (requires clientside Lua/module loading to be permitted).
 - No OpenCV or computer-vision dependency in the native desktop app.
 
 ## Native Windows app
@@ -26,7 +26,7 @@ Open [index.html](index.html) in a modern browser and select a local `.bsp` file
 
 ## Live overlay / Оверлей в игре
 
-The optional external overlay is documented in [docs/EXTERNAL_OVERLAY_RU_EN.md](docs/EXTERNAL_OVERLAY_RU_EN.md). It uses Windows Raw Input and draws a transparent, click-through Qt window; it requires no Garry's Mod addon or server changes. It estimates view angles from the initial `getpos` angles plus mouse deltas, so set the game's sensitivity, `m_yaw`, `m_pitch` and FOV correctly. It does not read the game's internal camera state, and camera changes unrelated to mouse input can cause drift.
+The native bridge source and setup are documented in [gmod-addon/native-bridge/README.md](gmod-addon/native-bridge/README.md). The app listens on a local Windows named pipe; the GMod binary module sends telemetry and receives HUD target-marker commands. This is a documented GMod native Lua module, not arbitrary DLL injection. A compatible client must allow local client Lua and binary modules; many public servers disable this, so the bridge cannot force itself to load there. The native module and end-to-end build still need local compilation and in-game verification.
 
 ## Technical scope
 
