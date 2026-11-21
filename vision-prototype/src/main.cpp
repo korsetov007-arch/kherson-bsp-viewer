@@ -11,6 +11,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QHash>
 #include <QLocale>
 #include <QMenu>
@@ -172,6 +173,7 @@ private:
         useScreenPositionButton_ = nullptr;
         showSkyboxCheck_ = nullptr;
         heightfieldCheck_ = nullptr;
+        contourIntervalCombo_ = nullptr;
         currentYawInit_ = currentPitchInit_ = overlayFov_ = nullptr;
         originX_ = originY_ = originZ_ = nullptr;
         targetX_ = targetY_ = targetZ_ = nullptr;
@@ -203,9 +205,12 @@ private:
         mapView_->setMap(bspFile_.vertices(), polygons);
         if (heightfield_.isValid()) {
             mapView_->setHeightfield(heightfield_.hillshadeImage(), heightfield_.worldBounds());
+            mapView_->setHeightfieldContours(heightfieldContourInterval_ == 256
+                ? heightfield_.contours256() : heightfield_.contours128());
             mapView_->setHeightfieldVisible(heightfieldVisible_);
         } else {
             mapView_->setHeightfield({}, {});
+            mapView_->setHeightfieldContours({});
             mapView_->setHeightfieldVisible(false);
         }
         meshView_->setMap(bspFile_.vertices(), polygons);
@@ -319,13 +324,16 @@ private:
         heightfieldVisible_ = true;
         if (mapView_) {
             mapView_->setHeightfield(heightfield_.hillshadeImage(), heightfield_.worldBounds());
+            mapView_->setHeightfieldContours(heightfieldContourInterval_ == 256
+                ? heightfield_.contours256() : heightfield_.contours128());
             mapView_->setHeightfieldVisible(true);
         }
         statusBar()->showMessage(bspvision::uiText(
-            "Heightfield ready: %1×%2 cells, %3 covered, cell %4 units.",
-            "Heightfield готов: %1×%2 ячеек, покрыто %3, размер ячейки %4 ед.")
+            "Heightfield ready: %1×%2 cells, %3 covered, cell %4 units, contours %5.",
+            "Heightfield готов: %1×%2 ячеек, покрыто %3, размер ячейки %4 ед., изолинии %5.")
             .arg(heightfield_.width()).arg(heightfield_.height())
-            .arg(heightfield_.coveredCellCount()).arg(heightfield_.cellSize(), 0, 'f', 2));
+            .arg(heightfield_.coveredCellCount()).arg(heightfield_.cellSize(), 0, 'f', 2)
+            .arg(heightfieldContourInterval_));
     }
 
     void buildBspTab(QTabWidget *tabs) {
@@ -344,6 +352,16 @@ private:
         heightfieldCheck_->setChecked(heightfieldVisible_);
         heightfieldCheck_->setEnabled(bspFile_.isLoaded());
         controls->addWidget(heightfieldCheck_);
+        auto *contourLabel = new QLabel(bspvision::uiText("Contours", "Изолинии"), tab);
+        controls->addWidget(contourLabel);
+        contourIntervalCombo_ = new QComboBox(tab);
+        contourIntervalCombo_->addItem(QStringLiteral("128 u"), 128);
+        contourIntervalCombo_->addItem(QStringLiteral("256 u"), 256);
+        contourIntervalCombo_->setCurrentIndex(heightfieldContourInterval_ == 256 ? 1 : 0);
+        contourIntervalCombo_->setEnabled(bspFile_.isLoaded());
+        contourIntervalCombo_->setToolTip(bspvision::uiText(
+            "Contour interval in Source world units.", "Шаг изолиний в единицах мира Source."));
+        controls->addWidget(contourIntervalCombo_);
         controls->addStretch();
         layout->addLayout(controls);
         connect(showSkyboxCheck_, &QCheckBox::toggled, this, [this](bool checked) {
@@ -352,6 +370,15 @@ private:
         });
         connect(heightfieldCheck_, &QCheckBox::toggled, this, [this](bool checked) {
             setHeightfieldVisible(checked);
+        });
+        connect(contourIntervalCombo_, qOverload<int>(&QComboBox::currentIndexChanged),
+                this, [this](int index) {
+            heightfieldContourInterval_ = (contourIntervalCombo_ && contourIntervalCombo_->itemData(index).toInt() == 256)
+                ? 256 : 128;
+            if (heightfield_.isValid() && mapView_) {
+                mapView_->setHeightfieldContours(heightfieldContourInterval_ == 256
+                    ? heightfield_.contours256() : heightfield_.contours128());
+            }
         });
 
         bspSummary_ = new QLabel(bspvision::uiText(
@@ -411,6 +438,7 @@ private:
                 heightfieldCheck_->setChecked(false);
                 heightfieldCheck_->setEnabled(true);
             }
+            if (contourIntervalCombo_) contourIntervalCombo_->setEnabled(true);
             if (showSkyboxCheck_) showSkyboxCheck_->setEnabled(true);
             refreshMapViews();
             statusBar()->showMessage(bspvision::uiText("Loaded BSP: %1", "Загружена карта BSP: %1")
@@ -950,8 +978,10 @@ private:
     QAction *russianAction_ = nullptr;
     QCheckBox *showSkyboxCheck_ = nullptr;
     QCheckBox *heightfieldCheck_ = nullptr;
+    QComboBox *contourIntervalCombo_ = nullptr;
     bool showSkybox_ = false;
     bool heightfieldVisible_ = false;
+    int heightfieldContourInterval_ = 128;
     bool trajectoryCalculated_ = false;
 
     QLabel *bspSummary_ = nullptr;
