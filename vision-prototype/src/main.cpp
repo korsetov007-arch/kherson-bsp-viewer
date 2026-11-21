@@ -503,7 +503,7 @@ private:
         connect(startScreenReader, &QPushButton::clicked, this, [this] { startClShowPosReader(); });
         connect(stopScreenReader, &QPushButton::clicked, this, [this] { stopClShowPosReader(); });
         connect(useScreenPositionButton_, &QPushButton::clicked, this, [this] {
-            ClShowPosSample sample;
+            bspvision::ClShowPosSample sample;
             if (!screenReader_.latestSample(&sample) || !originX_ || !originY_ || !originZ_) return;
             originX_->setValue(sample.position.x());
             originY_->setValue(sample.position.y());
@@ -664,7 +664,7 @@ private:
 
     void pollClShowPosReader() {
         if (!screenReader_.isRunning()) return;
-        ClShowPosSample sample;
+        bspvision::ClShowPosSample sample;
         QString status;
         if (screenReader_.poll(&sample, &status)) {
             if (!bridgeConnected_) {
@@ -832,7 +832,7 @@ private:
         if (bridgeConnected_) {
             state = QStringLiteral("Native bridge connected");
         } else if (screenReaderEnabledCheck_ && screenReaderEnabledCheck_->isChecked()) {
-            ClShowPosSample sample;
+            bspvision::ClShowPosSample sample;
             state = screenReader_.latestSample(&sample)
                 ? QStringLiteral("Screen telemetry active (cl_showpos)")
                 : screenReader_.lastStatus();
