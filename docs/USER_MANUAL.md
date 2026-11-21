@@ -1,6 +1,6 @@
 # Source BSP Geometry Lab — user manual / руководство пользователя
 
-> Version note: this manual describes the native Qt desktop application and its optional SBGL native bridge. The bridge receives telemetry through a local Windows named pipe and can request an in-game HUD marker. Setup and compatibility limitations are documented in [the native bridge guide](../gmod-addon/native-bridge/README.md).
+> Version note: live telemetry is read exclusively from the visible `cl_showpos` screen text. No SBGL Bridge, in-game Lua module, or named pipe is used.
 
 # Русский
 
@@ -26,7 +26,7 @@
 ## 4. Навигация по геометрии
 
 - **Сверху XY**: показ полигонов на плоскости X/Y. Щёлкните по карте, чтобы вывести координаты.
-- **3D-орбита**: удерживайте левую кнопку мыши и перемещайте мышь для вращения; колесо мыши меняет масштаб.
+- **3D-орбита**: удерживайте левую кнопку мыши и перемещайте мышь для вращения; колесо меняет масштаб; двойной щелчок сбрасывает камеру.
 - Координата **Z** не определяется однозначно по виду сверху: одной точке X/Y могут соответствовать разные этажи. Введите нужную высоту вручную.
 - Флажок sky-поверхностей меняет геометрию во всех связанных видах.
 
@@ -44,7 +44,7 @@
 ## 6. Ограничения и устранение проблем
 
 - Поддерживается только BSP v20.
-- 3D-просмотр — упрощённая отрисовка полигонов без текстур, света Source и полноценного Z-buffer.
+- 3D-просмотр — перспективная отрисовка полигонов без текстур и света Source; сортировка по глубине приблизительная. Двойной щелчок сбрасывает положение камеры.
 - Если sky-плоскости остаются, включите флажок и выключите обратно для сравнения; проверьте имена материалов или приложите карту для расширения правил определения.
 - Баллистика не учитывает столкновения, препятствия, сопротивление воздуха, взрывной радиус и поведение конкретного оружия. Результаты — только визуальный ориентир; приложение не управляет игрой.
 - Если цель не имеет решения, увеличьте скорость, уменьшите гравитацию или выберите более близкую цель.
@@ -73,7 +73,7 @@ Enable the checkbox when you want to inspect those surfaces. If a huge plane rem
 ## 4. Geometry navigation
 
 - **Top-down XY** shows polygons on the horizontal X/Y plane. Click the view to read coordinates.
-- **Orbit 3D**: hold the left mouse button and drag to rotate; use the mouse wheel to zoom.
+- **Orbit 3D**: hold the left mouse button and drag to rotate; use the mouse wheel to zoom; double-click to reset the camera.
 - **Z** cannot be inferred uniquely from a top-down view: the same X/Y may belong to different floors. Enter the desired height manually.
 - The sky-surface checkbox affects the geometry shown in all linked views.
 
@@ -91,7 +91,7 @@ Colors: green = launch, red = target, amber = trajectory.
 ## 6. Limitations and troubleshooting
 
 - Only Source BSP v20 is supported.
-- The 3D view is a lightweight polygon preview without Source textures, lighting or a full Z-buffer.
+- The 3D view is a lightweight perspective polygon preview without Source textures, lighting or a full Z-buffer. Double-click to reset the camera.
 - If sky planes persist, toggle **Show skybox surfaces** to compare; material-name rules may need to be extended for the particular BSP.
 - Ballistics do not include collisions, map occlusion, air drag, splash radius or weapon-specific behavior. The trajectory is a visual reference; the app does not control the game.
 - If the solver reports no solution, increase speed, reduce gravity or select a closer target.
@@ -103,25 +103,25 @@ Colors: green = launch, red = target, amber = trajectory.
 
 Этот режим не использует Lua, чтение памяти процесса или нейросеть. Он захватывает прямоугольную область основного монитора через DXGI Desktop Duplication и ищет видимые строки `pos:`, `ang:` и `vel:` через пиксельные шаблоны.
 
-1. В игре включите `cl_showpos 1`, если эта переменная доступна в текущей сборке и на сервере.
-2. Во вкладке «Баллистика» откройте «Резервный экранный канал», включите чтение и задайте X/Y/ширину/высоту области захвата.
-3. Область задана в физических экранных пикселях относительно основного монитора. Она должна включать как минимум `pos:` и `ang:` строки. После изменения области нажмите «Применить область / запуск».
+1. В игре включите `cl_showpos 1`, чтобы строки телеметрии были видны на экране.
+2. Во вкладке «Баллистика» нажмите **«Выделить область мышью»**. Экран слегка затемнится; удерживайте левую кнопку и обведите прямоугольником строки `pos:` и `ang:` (по возможности и `vel:`), затем отпустите кнопку.
+3. Область автоматически сохраняется в физических экранных пикселях относительно основного монитора и сразу запускает чтение. Для оконного или безрамочного режима результат надёжнее. При желании можно вручную уточнить X/Y/ширину/высоту.
 4. Следите за состоянием распознавания и оценкой уверенности. Непрошедшие числовую проверку или низкоуверенные данные не принимаются.
 5. Кнопка «Использовать pos как точку запуска» копирует прочитанную позицию в начало траектории. `pos` — это `MainViewOrigin` Source, а не гарантированная позиция дульного среза. Проверьте смещение камеры/орудия для конкретной техники.
 
-Это экспериментальная первая реализация: распознавание шаблонов ещё не проверено на реальном скриншоте GMod и может зависеть от шрифта, разрешения, масштаба интерфейса и фона сцены. Native Bridge предпочтительнее, когда он доступен.
+Это экспериментальная реализация: распознавание шаблонов может зависеть от шрифта, разрешения, масштаба интерфейса и фона сцены. Низкоуверенные и некорректные данные отбрасываются. Работает только с текстом, который реально виден на выбранном экране.
 
 ### English
 
 This mode does not use Lua, process-memory access or a neural network. It captures a crop from the primary display with DXGI Desktop Duplication and looks for visible `pos:`, `ang:` and `vel:` rows using pixel templates.
 
 1. Enable `cl_showpos 1` in game, if the variable is available in that game build and server configuration.
-2. In the Ballistic tab, expand Screen fallback, enable the reader, and set the crop X/Y/width/height.
-3. Crop coordinates are physical screen pixels relative to the primary monitor. Include at least the `pos:` and `ang:` rows, then click Apply crop / start.
+2. In the Ballistic tab, click **Select crop with mouse**. The screen is dimmed; drag a rectangle around the visible `pos:` and `ang:` rows (include `vel:` if possible), then release the left mouse button.
+3. The crop is saved in physical screen pixels relative to the primary monitor and the reader starts automatically. Windowed or borderless mode is recommended. X/Y/width/height can still be fine-tuned manually.
 4. Check the reader status and confidence score. Invalid or low-confidence samples are rejected.
 5. The Use last pos as launch point button copies the decoded position into the trajectory origin. `pos` is Source `MainViewOrigin`, not a guaranteed muzzle location; verify camera-to-weapon offset for the vehicle.
 
-This is an experimental first implementation and has not been validated against an actual GMod screenshot. Recognition can vary with font rasterization, resolution, UI scaling and scene background. Prefer Native Bridge when available.
+This is an experimental implementation. Recognition can vary with font rasterization, resolution, UI scaling and scene background. Invalid or low-confidence matches are rejected; only visible on-screen telemetry is used.
 
 
 ## Heightfield / hillshade
