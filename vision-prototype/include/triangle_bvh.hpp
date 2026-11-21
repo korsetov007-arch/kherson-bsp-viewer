@@ -18,6 +18,13 @@ struct SegmentHit {
 
 class TriangleBvh final {
 public:
+    // Internal double-precision vector exposed for translation-unit helper routines.
+    struct Vec3d {
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
+
     bool build(const QVector<BspPolygon> &polygons, QString *error = nullptr);
     void clear();
 
@@ -29,11 +36,6 @@ public:
                           SegmentHit *hit = nullptr) const;
 
 private:
-    struct Vec3d {
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
-    };
     struct Triangle {
         Vec3d a, b, c;
         Vec3d boundsMin, boundsMax, centroid, normal;
