@@ -6,6 +6,7 @@
 - ORB image features, descriptor ratio filtering, and RANSAC homography inlier visualization.
 - Source BSP v20 header/lump validation plus extraction of vertices, edges, surfedges, and face outlines.
 - Top-down XY geometry preview and a full lump summary table.
+- Delayed primary-monitor screenshot capture using Qt screen APIs.
 
 ## Intended localization pipeline
 
