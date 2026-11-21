@@ -10,7 +10,8 @@
 - Russian/English interface with a persistent language setting.
 - Offline projectile-trajectory visualization with low/high ballistic-angle solving.
 - Optional Native Bridge for Garry's Mod, plus an experimental Tier B `cl_showpos` fallback using DXGI screen capture and classic pixel-template matching.
-- On-demand two-layer terrain heightfield (`ground`/`canopy`) and hillshade for the 2D map.
+- On-demand two-layer terrain heightfield (`ground`/`canopy`), hillshade, and cached 128/256-unit contour lines for the 2D map.
+- Median-split triangle BVH for approximate trajectory/surface intersection checks against BSP render triangles.
 - No OpenCV, OCR engine or neural-network model is required for the native desktop app.
 
 ## Native Windows app
@@ -31,4 +32,4 @@ The native bridge source and setup are documented in [gmod-addon/native-bridge/R
 
 ## Technical scope
 
-The native parser currently supports Source BSP v20, reconstructs face outlines and basic displacement triangles from DISPINFO/DISP_VERTS/DISP_TRIS, and uses material metadata to hide common skybox faces by default. The optional heightfield rasterizes upward-facing triangles into minimum-ground and maximum-canopy layers and generates a hillshade on demand. This is not yet a full Source-engine renderer or collision system: materials/textures, complete prop collision, accurate brush/portal semantics, and full trace parity are not implemented. The ballistic lab is an ideal constant-gravity planning aid and does not control a game. The `cl_showpos` fallback is experimental, captures a crop from the primary display, and has not yet been validated with an actual GMod capture; the displayed view origin is not guaranteed to be the muzzle position.
+The native parser currently supports Source BSP v20, reconstructs face outlines and basic displacement triangles from DISPINFO/DISP_VERTS/DISP_TRIS, and uses material metadata to hide common skybox faces by default. The optional heightfield rasterizes upward-facing triangles into minimum-ground and maximum-canopy layers and generates a hillshade on demand. This is not yet a full Source-engine renderer or collision system: materials/textures, complete prop collision, accurate brush/portal semantics, full trace parity, prop collision, and exact brush-solid collision are not implemented. The trajectory BVH is only a render-surface approximation. The ballistic lab is an ideal constant-gravity planning aid and does not control a game. The `cl_showpos` fallback is experimental, captures a crop from the primary display, and has not yet been validated with an actual GMod capture; the displayed view origin is not guaranteed to be the muzzle position.
