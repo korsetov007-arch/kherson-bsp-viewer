@@ -413,10 +413,8 @@ private:
             .arg(s.value("ammo_clip").toInt())
             .arg(s.value("overheated").toBool() ? "перегрев" : "норма"));
 
-        const double speed = s.value("projectile_speed").toDouble();
-        const double gravity = s.value("gravity").toDouble();
-        if (speed > 0.0) speed_->setValue(speed);
-        if (gravity > 0.0) gravity_->setValue(gravity);
+        // Keep the user's ballistic profile editable; live bridge values are telemetry,
+        // not an instruction to overwrite custom speed/gravity settings every poll.
         fireButton_->setEnabled(s.value("fire_ready").toBool());
     }
 
