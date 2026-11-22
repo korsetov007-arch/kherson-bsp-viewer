@@ -1,0 +1,16 @@
+#include "topdown_picker.hpp"
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPolygonF>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <utility>
+TopDownPicker::TopDownPicker(QWidget*p):QWidget(p){setMinimumSize(380,280);setMouseTracking(true);setStyleSheet("background:#171b21;color:#e4eaf2;");setToolTip("ЛКМ: выбрать X/Y. Высоту Z задайте вручную.");}
+void TopDownPicker::setPolygons(const QVector<bspvision::BspPolygon>&ps){polygons_=ps;bool first=true;minX_=minY_=std::numeric_limits<double>::max();maxX_=maxY_=std::numeric_limits<double>::lowest();for(const auto&poly:polygons_)for(const auto&v:poly.vertices){if(!std::isfinite(v.x)||!std::isfinite(v.y))continue;minX_=std::min(minX_,double(v.x));maxX_=std::max(maxX_,double(v.x));minY_=std::min(minY_,double(v.y));maxY_=std::max(maxY_,double(v.y));first=false;}if(first){minX_=minY_=-1;maxX_=maxY_=1;}if(maxX_-minX_<1){minX_-=.5;maxX_+=.5;}if(maxY_-minY_<1){minY_-=.5;maxY_+=.5;}hasMarker_=false;update();}
+void TopDownPicker::setMarker(double x,double y){markerX_=x;markerY_=y;hasMarker_=true;update();}
+void TopDownPicker::setPointCallback(std::function<void(double,double)>cb){pointCallback_=std::move(cb);}
+QPointF TopDownPicker::worldToScreen(double x,double y)const{QRectF a=QRectF(rect()).adjusted(22,28,-22,-22);double s=std::min(a.width()/(maxX_-minX_),a.height()/(maxY_-minY_)),w=(maxX_-minX_)*s,h=(maxY_-minY_)*s;return {a.center().x()-w*.5+(x-minX_)*s,a.center().y()-h*.5+(maxY_-y)*s};}
+QPointF TopDownPicker::screenToWorld(const QPointF&p)const{QRectF a=QRectF(rect()).adjusted(22,28,-22,-22);double s=std::min(a.width()/(maxX_-minX_),a.height()/(maxY_-minY_)),w=(maxX_-minX_)*s,h=(maxY_-minY_)*s;return {minX_+(p.x()-(a.center().x()-w*.5))/s,maxY_-(p.y()-(a.center().y()-h*.5))/s};}
+void TopDownPicker::paintEvent(QPaintEvent*){QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.fillRect(rect(),QColor(23,27,33));p.setPen(QColor(130,145,164));p.drawText(QRect(12,4,width()-24,20),Qt::AlignLeft|Qt::AlignVCenter,"TOP-DOWN X/Y · ЛКМ — точка цели · Z задаётся отдельно");QRectF a=QRectF(rect()).adjusted(22,28,-22,-22);p.setPen(QPen(QColor(42,50,60),1));for(int i=1;i<10;++i){double x=a.left()+a.width()*i/10.,y=a.top()+a.height()*i/10.;p.drawLine(QPointF(x,a.top()),QPointF(x,a.bottom()));p.drawLine(QPointF(a.left(),y),QPointF(a.right(),y));}for(const auto&poly:polygons_){if(poly.vertices.size()<3)continue;QPolygonF q;q.reserve(poly.vertices.size());for(const auto&v:poly.vertices)q<<worldToScreen(v.x,v.y);bool t=poly.displacementSurface;p.setPen(QPen(t?QColor(103,133,119):QColor(99,117,143),.45));p.setBrush(t?QColor(60,83,72,80):QColor(77,94,118,65));p.drawPolygon(q);}p.setPen(QPen(QColor(174,186,203),1));p.setBrush(Qt::NoBrush);p.drawRect(a);if(hasMarker_){QPointF c=worldToScreen(markerX_,markerY_);p.setPen(QPen(QColor(255,178,76),2));p.drawLine(c+QPointF(-9,0),c+QPointF(9,0));p.drawLine(c+QPointF(0,-9),c+QPointF(0,9));p.drawEllipse(c,5,5);}}
+void TopDownPicker::mousePressEvent(QMouseEvent*e){if(e->button()==Qt::LeftButton&&!polygons_.isEmpty()){QPointF w=screenToWorld(e->position());markerX_=w.x();markerY_=w.y();hasMarker_=true;update();if(pointCallback_)pointCallback_(markerX_,markerY_);e->accept();return;}QWidget::mousePressEvent(e);}
