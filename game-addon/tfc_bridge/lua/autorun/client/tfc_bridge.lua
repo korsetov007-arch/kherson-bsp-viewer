@@ -20,6 +20,7 @@ local aimCommand
 local aimExpires = 0
 local lastAim
 local firePulse = false
+local attackPulsePending = false
 local attackPulseExpires = 0
 local lastStateWrite = 0
 
@@ -220,6 +221,7 @@ local function processCommand()
         aimCommand = nil
         lastAim = nil
         firePulse = false
+        attackPulsePending = false
         attackPulseExpires = 0
         return nil
     end
@@ -231,6 +233,7 @@ local function processCommand()
         aimCommand = nil
         lastAim = nil
         firePulse = false
+        attackPulsePending = false
         attackPulseExpires = 0
         commandAck = "connected"
         commandMessage = "TFC desktop session connected"
@@ -296,6 +299,7 @@ local function processCommand()
         aimCommand = nil
         lastAim = nil
         firePulse = false
+        attackPulsePending = false
         attackPulseExpires = 0
         commandAck = "cancelled"
         commandMessage = "Aim cancelled"
@@ -335,9 +339,10 @@ hook.Add("CreateMove", "TFC_Bridge_CreateMove", function(cmd)
 
     if firePulse then
         firePulse = false
-        attackPulseExpires = CurTime() + math.max(FrameTime(), 0.02)
+        attackPulsePending = true
+        attackPulseExpires = CurTime() + 0.15
         commandAck = "fire_pulse_sent"
-        commandMessage = "One-frame LVS ATTACK pulse sent"
+        commandMessage = "One-shot LVS ATTACK pulse armed"
     end
 end)
 
@@ -345,13 +350,19 @@ end)
 -- hook for a short single pulse rather than holding the regular mouse button.
 hook.Add("LVS.PlayerKeyDown", "TFC_Bridge_AttackPulse", function(ply, actionName)
     if ply == LocalPlayer() and actionName == "ATTACK" and
-       attackPulseExpires > CurTime() then
+       attackPulsePending and CurTime() <= attackPulseExpires then
+        attackPulsePending = false -- consume exactly once
         return true
     end
 end)
 
 timer.Create("TFC_Bridge_Poll", 0.10, 0, function()
     local host = processCommand()
+    if attackPulsePending and CurTime() > attackPulseExpires then
+        attackPulsePending = false
+        commandAck = "fire_pulse_expired"
+        commandMessage = "LVS did not consume the queued ATTACK pulse"
+    end
     if not istable(host) then return end
 
     if CurTime() - lastStateWrite >= 0.25 then
