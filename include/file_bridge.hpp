@@ -21,8 +21,10 @@ public:
     QJsonObject state() const { return state_; }
     QString lastError() const { return lastError_; }
 
-    bool sendAim(double worldYawDeg, double viewPitchDeg);
-    bool sendFire(double worldYawDeg, double viewPitchDeg);
+    bool sendAim(double worldYawDeg, double viewPitchDeg,
+                 double muzzleYawDeg, double muzzlePitchDeg);
+    bool sendFire(double worldYawDeg, double viewPitchDeg,
+                  double muzzleYawDeg, double muzzlePitchDeg);
     void sendCancel();
 
     void setUpdatedCallback(std::function<void()> callback) {

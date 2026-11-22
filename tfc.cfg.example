@@ -1,14 +1,19 @@
 # TFC developer-only bridge settings
 # Edit beside tfc.exe, then restart TFC.
 
+[ballistics]
+# auto uses the LVS vehicle's configured projectile velocity when available.
+# Otherwise it falls back to 4000 Source units/s. A number overrides auto.
+projectile_speed=auto
+# auto reads live physenv gravity. A numeric value overrides it outside LVS prediction mode.
+gravity=auto
+
 [aim]
-# The real muzzle attachment angle is compared against this tolerance.
+# Maximum actual muzzle-angle error accepted for fire readiness.
 tolerance_deg=1.5
 # Player view is nudged by this many degrees per CreateMove frame.
 step_deg_per_tick=2.0
 
 [game]
-# "auto" uses the LVS vehicle's TurretBallisticsMuzzleAttachment,
-# then tries common names such as muzzle_1 through muzzle_12.
-# Set an exact attachment name only when needed.
+# auto uses LVS TurretBallisticsMuzzleAttachment, then common muzzle names.
 muzzle_attachment=auto

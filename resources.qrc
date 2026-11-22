@@ -1,5 +1,6 @@
 <RCC>
   <qresource prefix="/">
     <file alias="tfc_bridge.lua">game-addon/tfc_bridge/lua/autorun/client/tfc_bridge.lua</file>
+    <file alias="tfc_bridge_server.lua">game-addon/tfc_bridge/lua/autorun/server/tfc_bridge_server.lua</file>
   </qresource>
 </RCC>

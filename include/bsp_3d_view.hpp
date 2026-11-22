@@ -1,10 +1,12 @@
 #pragma once
 
 #include "bsp_file.hpp"
+#include "ballistics.hpp"
 
 #include <QPoint>
 #include <QPointF>
 #include <QRectF>
+#include <QVector>
 #include <QWidget>
 
 #include <functional>
@@ -20,6 +22,8 @@ public:
     void setTarget(double x, double y, double z);
     void clearTarget();
     void setTargetCallback(std::function<void(double, double, double)> callback);
+    void setObserver(double x, double y, double z, double yawDeg, double pitchDeg, bool valid);
+    void setTrajectory(const QVector<tfc::Vec3> &points);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -52,6 +56,13 @@ private:
     QPoint pressMousePosition_;
     bool dragging_ = false;
     bool hasTarget_ = false;
+    bool hasObserver_ = false;
+    double observerX_ = 0.0;
+    double observerY_ = 0.0;
+    double observerZ_ = 0.0;
+    double observerYawDeg_ = 0.0;
+    double observerPitchDeg_ = 0.0;
+    QVector<tfc::Vec3> trajectory_;
 };
 
 } // namespace bspvision

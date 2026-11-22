@@ -164,21 +164,27 @@ bool FileBridge::sendCommand(const QJsonObject &command)
     return writeJsonAtomically(dataDirectory_ + "/command.json", envelope);
 }
 
-bool FileBridge::sendAim(double worldYawDeg, double viewPitchDeg)
+bool FileBridge::sendAim(double worldYawDeg, double viewPitchDeg,
+                          double muzzleYawDeg, double muzzlePitchDeg)
 {
     return sendCommand(QJsonObject{
         {"type", "aim"},
         {"world_yaw", worldYawDeg},
-        {"view_pitch", viewPitchDeg}
+        {"view_pitch", viewPitchDeg},
+        {"muzzle_yaw", muzzleYawDeg},
+        {"muzzle_pitch", muzzlePitchDeg}
     });
 }
 
-bool FileBridge::sendFire(double worldYawDeg, double viewPitchDeg)
+bool FileBridge::sendFire(double worldYawDeg, double viewPitchDeg,
+                           double muzzleYawDeg, double muzzlePitchDeg)
 {
     return sendCommand(QJsonObject{
         {"type", "fire"},
         {"world_yaw", worldYawDeg},
-        {"view_pitch", viewPitchDeg}
+        {"view_pitch", viewPitchDeg},
+        {"muzzle_yaw", muzzleYawDeg},
+        {"muzzle_pitch", muzzlePitchDeg}
     });
 }
 

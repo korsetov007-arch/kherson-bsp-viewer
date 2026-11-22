@@ -273,6 +273,22 @@ void Bsp3DView::clearTarget() {
     update();
 }
 
+void Bsp3DView::setObserver(
+    double x, double y, double z, double yawDeg, double pitchDeg, bool valid) {
+    observerX_ = x;
+    observerY_ = y;
+    observerZ_ = z;
+    observerYawDeg_ = yawDeg;
+    observerPitchDeg_ = pitchDeg;
+    hasObserver_ = valid;
+    update();
+}
+
+void Bsp3DView::setTrajectory(const QVector<tfc::Vec3> &points) {
+    trajectory_ = points;
+    update();
+}
+
 void Bsp3DView::setTargetCallback(
     std::function<void(double, double, double)> callback) {
     targetCallback_ = std::move(callback);
@@ -438,6 +454,70 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
     }
 
     painter.drawImage(QPoint(0, 0), meshImage);
+
+    const auto projectWorld = [&](const tfc::Vec3 &world, QPointF &screen, double &depth) {
+        const Vec3 relative{
+            world.x - camera.cameraPosition.x,
+            world.y - camera.cameraPosition.y,
+            world.z - camera.cameraPosition.z
+        };
+        depth = dot(relative, camera.forward);
+        if (!std::isfinite(depth) || depth < nearPlane) return false;
+        const double sx = viewport.center().x() +
+            dot(relative, camera.right) * focalLength / depth;
+        const double sy = viewport.center().y() -
+            dot(relative, camera.up) * focalLength / depth;
+        if (!std::isfinite(sx) || !std::isfinite(sy)) return false;
+        screen = QPointF(sx, sy);
+        return true;
+    };
+
+    // The predicted shell path is an overlay: keep it visible over the BSP mesh.
+    if (trajectory_.size() > 1) {
+        painter.setPen(QPen(QColor(225, 166, 83), 2.4, Qt::SolidLine,
+                            Qt::RoundCap, Qt::RoundJoin));
+        for (qsizetype i = 1; i < trajectory_.size(); ++i) {
+            QPointF a, b;
+            double depthA = 0.0, depthB = 0.0;
+            if (projectWorld(trajectory_[i - 1], a, depthA) &&
+                projectWorld(trajectory_[i], b, depthB)) {
+                painter.drawLine(a, b);
+            }
+        }
+    }
+
+    if (hasObserver_) {
+        const tfc::Vec3 observer{observerX_, observerY_, observerZ_};
+        QPointF center;
+        double depth = 0.0;
+        if (projectWorld(observer, center, depth)) {
+            const double yaw = observerYawDeg_ * std::numbers::pi / 180.0;
+            const double pitch = observerPitchDeg_ * std::numbers::pi / 180.0;
+            const Vec3 direction{
+                std::cos(pitch) * std::cos(yaw),
+                std::cos(pitch) * std::sin(yaw),
+                -std::sin(pitch)
+            };
+            const tfc::Vec3 ahead{
+                observerX_ + direction.x * mapDiameter_ * 0.08,
+                observerY_ + direction.y * mapDiameter_ * 0.08,
+                observerZ_ + direction.z * mapDiameter_ * 0.08
+            };
+            QPointF tip;
+            double tipDepth = 0.0;
+            painter.setPen(QPen(QColor(157, 190, 123), 2.6, Qt::SolidLine,
+                                Qt::RoundCap, Qt::RoundJoin));
+            if (projectWorld(ahead, tip, tipDepth))
+                painter.drawLine(center, tip);
+            painter.setBrush(QColor(157, 190, 123));
+            painter.setPen(QPen(QColor(13, 18, 13), 1.5));
+            painter.drawEllipse(center, 6.5, 6.5);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(QColor(209, 224, 182), 1.2));
+            painter.drawEllipse(center, 10.0, 10.0);
+        }
+    }
+
     if (hasTarget_) {
         const Vec3 relative =
             Vec3{targetX_, targetY_, targetZ_} - camera.cameraPosition;

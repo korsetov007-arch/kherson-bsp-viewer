@@ -1,63 +1,84 @@
 # TFC — Tactical Fire Control
 
-Lightweight Windows x64 C++20 / Qt 6 Source BSP viewer and Garry's Mod front end. TFC is a short tactical acronym in the spirit of Combat Mission.
+Windows x64 C++20 / Qt 6 Source BSP viewer and Garry's Mod/LVS fire-control front end.
 
-## Prototype
-- Single desktop executable: `tfc.exe`.
-- Drop a Source BSP v20 file onto `tfc.exe`, or pass it as argv[1]. Opening it without a map shows brief usage instructions.
-- The map window stays above Garry's Mod so it remains visible while the game is focused.
-- Click a visible surface in the 3D BSP view to select its world-space X/Y/Z point. The top-down tab remains available for X/Y selection.
-- F7 aims directly from the live muzzle position at the selected point; no unverified rocket speed or ballistic arc is assumed.
-- F8 requests one standard LVS ATTACK pulse, gated by the actual muzzle angle and gunner readiness.
-- The Lua addon installs once. Start Garry's Mod first, then TFC in ordinary use.
+## Current workflow
 
-## Developer bridge config
+- Run `tfc.exe` and open a Source BSP v20 map (drag-and-drop is supported).
+- Select a target on the 3D BSP surface or in the top-down X/Y map.
+- When GMod is connected, TFC reads live player and vehicle coordinates, view yaw/pitch, the selected LVS weapon, muzzle attachment position/angle, turret state and game gravity.
+- A live platform marker and view-direction arrow are drawn on both map views.
+- F7 computes a firing direction. If the current LVS vehicle is running its own ballistic compensation, TFC sends a line-of-sight command and predicts the compensated muzzle direction. Otherwise it computes an external low ballistic arc.
+- An amber trajectory preview is drawn on the 3D map and top-down map.
+- F8 requests one server-side LVS `ATTACK` pulse. The server hook returns `true` for exactly one `LVS.PlayerKeyDown("ATTACK")` read.
 
-The first launch creates `tfc.cfg` beside `tfc.exe`. The file is intentionally outside the main UI. Edit it and restart TFC to apply changes.
+## Ballistics configuration
 
-Default settings:
+The first launch creates `tfc.cfg` beside `tfc.exe`. These developer settings are intentionally not editable in the main UI. Edit the file and restart TFC.
 
-```ini
-[aim]
-tolerance_deg=1.5
-step_deg_per_tick=2.0
+    [ballistics]
+    projectile_speed=auto
+    gravity=auto
 
-[game]
-muzzle_attachment=auto
-```
+    [aim]
+    tolerance_deg=1.5
+    step_deg_per_tick=2.0
 
-- `tolerance_deg`: maximum actual muzzle-angle error accepted for fire readiness.
-- `step_deg_per_tick`: view-angle approach increment per CreateMove frame.
-- `muzzle_attachment=auto`: use the LVS vehicle's `TurretBallisticsMuzzleAttachment` property, then try common names such as `muzzle` and `muzzle_1…muzzle_12`. Set an exact attachment name only for a vehicle that needs it.
+    [game]
+    muzzle_attachment=auto
 
-The addon reports the player's position and view angles, vehicle transform, and `GetAttachment(...).Pos/Ang` from the live in-game muzzle. The actual muzzle angle, not just the camera angle, confirms that the barrel has reached the requested direction. In automatic mode, the bridge tries common muzzle names including `muzzle_1` through `muzzle_12`.
+- `projectile_speed=auto`: use the live LVS vehicle's `TurretBallisticsProjectileVelocity` when present; otherwise fall back to 4000 Source units/s. Set a number to override it. **4000 is only a fallback estimate, not a confirmed BM-30 rocket specification.**
+- `gravity=auto`: use live GMod `physenv.GetGravity()`. In native LVS predictor mode, TFC always uses the same live gravity value as LVS. A numeric override applies to TFC's external low-arc mode.
+- `tolerance_deg`: maximum difference between desired and actual muzzle world-forward vectors accepted for fire readiness.
+- `step_deg_per_tick`: maximum player view-angle movement per GMod `CreateMove` frame.
+- `muzzle_attachment=auto`: use LVS `TurretBallisticsMuzzleAttachment`, then try common names (`muzzle`, `muzzle_1`…`muzzle_12`). Set an exact name for a model with a non-standard attachment.
 
-## Bridge
+## Why there are two aim modes
 
-The bridge uses Garry's Mod's built-in DATA filesystem; no open network port, DLL, socket library or external Lua module. Session UUIDs and sequence numbers prevent stale commands being replayed. See [BRIDGE_PROTOCOL.md](docs/BRIDGE_PROTOCOL.md).
+Some LVS vehicles already calculate turret ballistics internally. For example, the upstream LVS wheeled-turret ballistics module can apply a gravity compensation only when its predictor is enabled, the vehicle is sufficiently upright, the player is not in third person, and (for `OpticsZoomOnly`) the player is holding zoom. Adding TFC's own ballistic elevation on top of that would double-compensate and send the barrel the wrong way.
 
-## First-time setup
+TFC detects the vehicle's LVS predictor settings and current zoom/third-person/upright state. When LVS compensation is active, it sends a direct line-of-sight view angle from the vehicle's sight attachment, then predicts the actual muzzle angle using LVS's configured projectile speed and gravity. When the LVS predictor is inactive, TFC computes a low ideal ballistic arc itself. The right-hand panel shows which mode is active. If the mode changes after F7, the old firing solution is invalidated and F7 must be pressed again.
 
-1. Build and run `tfc.exe`.
-2. If Steam discovery misses the game, choose the `garrysmod` folder containing `addons`.
-3. TFC installs `addons/tfc_bridge/lua/autorun/client/tfc_bridge.lua` automatically. If Windows blocks the write, it offers a one-time UAC elevation for this file copy only.
-4. If the game was already running during installation, restart it once.
-5. Later: start GMod, enter the LVS vehicle, then launch TFC and wait for CONNECTED.
+These calculations still approximate the vehicle. The exact BM-30 addon may add rocket-specific motor delay, drag, fuses, or other behavior that is not part of the generic LVS predictor.
+
+## Bridge architecture
+
+The addon contains two Lua files:
+
+- `lua/autorun/client/tfc_bridge.lua`: player/view telemetry, local file bridge and view-angle controller.
+- `lua/autorun/server/tfc_bridge_server.lua`: server-side one-shot LVS fire relay.
+
+The desktop and client addon exchange heartbeat/commands/state using GMod's built-in DATA filesystem under `garrysmod/data/tfc_suo/`. For a fire request, the client sends one short GMod net message to the server; it does not open an external socket, inject a DLL or load third-party Lua modules.
+
+**Why a server file is required:** LVS asks `ply:lvsKeyDown("ATTACK")` in the server-side weapon loop. A client-only `LVS.PlayerKeyDown` hook cannot change that server-side result. The new server addon validates the player's LVS seat, selected weapon, finite ammunition and overheat state, then queues a short-lived pulse. The server hook consumes it exactly once. Unlimited-ammo weapons are supported; LVS `GetClip()` may return `-1` when a weapon has no finite ammo limit.
+
+## Setup
+
+1. Build and launch `tfc.exe`.
+2. If Steam discovery misses the game, select the `garrysmod` folder containing `addons`.
+3. TFC installs both client and server Lua files in `garrysmod/addons/tfc_bridge/`.
+4. If GMod was already running during installation, restart it once.
+5. Start GMod, enter the BM-30/LVS gunner seat, then launch TFC and wait for CONNECTED.
+6. Load the BSP for the same map, select the target, check the live platform marker/heading and amber trajectory, then press F7. F8 becomes available after the actual muzzle direction and weapon-readiness checks pass.
+
+On a remote dedicated server, also install `tfc_bridge/lua/autorun/server/tfc_bridge_server.lua` in the server's own `garrysmod/addons/` directory. The TFC desktop can only install into the local GMod folder.
 
 ## Steam Workshop
 
-Yes: the bridge can be published as a separate Workshop addon. Its folder is `game-addon/tfc_bridge/` in the source/package layout; it contains only the client Lua script. See [ADDON_PUBLISHING.md](docs/ADDON_PUBLISHING.md) for testing, gmad/gmpublish commands and the icon requirements. The desktop EXE is not part of the Workshop addon.
+The Workshop addon folder is `game-addon/tfc_bridge/` and includes both client and server scripts. Do not include `tfc.exe`, CMake files, BSP maps, build outputs, credentials or private files. See [ADDON_PUBLISHING.md](docs/ADDON_PUBLISHING.md).
 
 ## Build
 
 Requirements: Visual Studio 2022 Desktop C++, CMake 3.24+, Qt 6.5+ MSVC x64.
 
-```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:/Qt/6.8.0/msvc2022_64"
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-```
+    cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:/Qt/6.8.0/msvc2022_64"
+    cmake --build build --config Release --parallel
+    ctest --test-dir build -C Release --output-on-failure
 
-## Known limitations
+## Limitations / validation status
 
-BSP v20 only; the viewer renders BSP geometry without textures or a full Source renderer. Target picking intersects the visible BSP mesh and is not an in-game collision trace. The bridge changes view angles through Garry's Mod's `CreateMove` hook and does not inject DLLs or use an external network connection. Weapon behavior and muzzle layout vary between addons; test F7/F8 in the actual BM-30 setup. The bridge can confirm its command and readiness checks, not that a projectile launched or hit. No live game test is claimed.
+- BSP v20 only; the viewer renders BSP geometry but is not a complete Source renderer and does not show textures.
+- Target picking intersects the BSP display mesh, not an in-game physics trace. Z/floor selection must be accurate.
+- Ballistic preview is an idealized approximation. It is not a complete LVS rocket or BM-30 projectile simulation.
+- The actual muzzle/sight attachment names and axes must be verified on the user's BM-30 addon.
+- Changes in this update have not been compiled with Qt/MSVC or tested in a live GMod session here. Confirm `[TFC] Server-side LVS fire relay ready` in the server console, then test F7 and one F8 pulse at a safe range before relying on it.

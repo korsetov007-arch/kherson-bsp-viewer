@@ -1,47 +1,44 @@
-# Publishing the TFC Lua bridge to Steam Workshop
+# Publishing the TFC bridge to Steam Workshop
 
-TFC's GMod bridge is a tiny client-side addon. The workshop package contains only:
+The addon package contains both client and server autorun scripts:
 
-tfc_bridge/
-  lua/
-    autorun/
-      client/
-        tfc_bridge.lua
+    tfc_bridge/
+      lua/
+        autorun/
+          client/
+            tfc_bridge.lua
+          server/
+            tfc_bridge_server.lua
 
-Do not include tfc.exe, CMake files, BSP maps, build outputs, credentials or other private files.
+Do not include `tfc.exe`, CMake files, BSP maps, build outputs, credentials or private files.
 
 ## Test locally first
 
 1. Copy the folder named `tfc_bridge` into `garrysmod/addons/`.
 2. Restart Garry's Mod.
-3. Check the console for `[TFC] Lua bridge ready`.
-4. Launch TFC and verify the Lua connection and the BM-30 muzzle telemetry.
+3. Check the client console for `[TFC] Lua bridge ready`.
+4. Check the server console for `[TFC] Server-side LVS fire relay ready`.
+5. Launch TFC and verify the live position, view heading and muzzle telemetry. Test F7 and a single F8 request at a safe range.
+
+For a remote dedicated server, its server folder must also contain `lua/autorun/server/tfc_bridge_server.lua`.
 
 ## Build the .gma on Windows
 
 Find Garry's Mod in Steam → Manage → Browse local files. The tools are in its `bin` folder.
 
-Open Command Prompt and run (adjust the folder paths):
+    cd /d "C:\\Program Files (x86)\\Steam\\steamapps\\common\\GarrysMod\\bin"
+    gmad.exe create -folder "D:\\TFC\\workshop\\tfc_bridge" -out "D:\\TFC\\workshop\\tfc_bridge.gma"
 
-```bat
-cd /d "C:\Program Files (x86)\Steam\steamapps\common\GarrysMod\bin"
-gmad.exe create -folder "D:\TFC\workshop\tfc_bridge" -out "D:\TFC\workshop\tfc_bridge.gma"
-```
+Prepare a 512×512 Baseline JPEG icon, then publish:
 
-Prepare a 512×512 Baseline JPEG icon. Then publish:
+    gmpublish.exe create -addon "D:\\TFC\\workshop\\tfc_bridge.gma" -icon "D:\\TFC\\workshop\\tfc_bridge.jpg"
 
-```bat
-gmpublish.exe create -addon "D:\TFC\workshop\tfc_bridge.gma" -icon "D:\TFC\workshop\tfc_bridge.jpg"
-```
+Sign in to Steam with the account that should own the addon. After upload, open the new Workshop item from your profile → Workshop Items / My Shared Files, add description and screenshots, then set visibility to Public when ready.
 
-Sign in to Steam with the account that should own the addon. After upload, open the new Workshop item from your profile → Workshop Items / My Shared Files, add the description and screenshots, and set visibility to Public when ready.
+## Updating
 
-## Updating later
+After changing Lua files, rebuild the .gma and run:
 
-After changing the Lua file, rebuild the .gma and use:
+    gmpublish.exe update -addon "D:\\TFC\\workshop\\tfc_bridge.gma" -id YOUR_WORKSHOP_ITEM_ID -changes "Describe the change"
 
-```bat
-gmpublish.exe update -addon "D:\TFC\workshop\tfc_bridge.gma" -id YOUR_WORKSHOP_ITEM_ID -changes "Describe the change"
-```
-
-Keep the Workshop addon separate from the desktop EXE release. Users can subscribe to the bridge in Workshop, while TFC itself is distributed as a separate Windows application.
+Keep the Workshop addon separate from the desktop EXE release.

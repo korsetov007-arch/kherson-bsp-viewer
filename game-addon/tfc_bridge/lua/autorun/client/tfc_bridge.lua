@@ -1,4 +1,4 @@
--- TFC bridge v1.1
+-- TFC bridge v1.2
 -- Installed once at garrysmod/addons/tfc_bridge/lua/autorun/client/.
 -- Built-in DATA filesystem only. No socket library, HTTP, DLL or external module.
 -- Important: physical muzzle attachment Ang from the live game is the aim feedback source.
@@ -19,9 +19,8 @@ local commandMessage = "Waiting for TFC"
 local aimCommand
 local aimExpires = 0
 local lastAim
-local firePulse = false
-local attackPulsePending = false
-local attackPulseExpires = 0
+local serverFireAck = "idle"
+local serverFireMessage = "No server fire request yet"
 local lastStateWrite = 0
 
 file.CreateDir(DATA_DIR)
@@ -72,12 +71,16 @@ end
 local function getGunner(seat, ply)
     if IsValid(seat) and isfunction(seat.lvsGetWeapon) then
         local ok, result = pcall(seat.lvsGetWeapon, seat)
-        if ok and IsValid(result) then return result end
+        if ok and IsValid(result) and isfunction(result.GetActiveWeapon) then
+            return result
+        end
     end
 
     if IsValid(ply) and isfunction(ply.lvsGetWeaponHandler) then
         local ok, result = pcall(ply.lvsGetWeaponHandler, ply)
-        if ok and IsValid(result) and result.LVS_GUNNER then return result end
+        if ok and IsValid(result) and isfunction(result.GetActiveWeapon) then
+            return result
+        end
     end
 
     return NULL
@@ -120,24 +123,39 @@ end
 local function weaponReadiness(seat, ply)
     local gunner = getGunner(seat, ply)
     if not IsValid(gunner) or not isfunction(gunner.GetActiveWeapon) then
-        return false, false, -1, -1, true
+        return false, false, -1, -1, true, false, "Weapon handler unavailable"
     end
 
     local ok, activeWeapon = pcall(gunner.GetActiveWeapon, gunner)
     if not ok or not istable(activeWeapon) or table.IsEmpty(activeWeapon) then
-        return false, false, -1, -1, true
+        return false, false, -1, -1, true, false, "No active LVS weapon"
     end
 
+    -- LVS GetClip() is a heat-derived display value and can be -1 for
+    -- unlimited-ammo weapons. It must not be used as the ammo-ready test.
     local clip = safeNumber(gunner, "GetClip", -1)
+    local maxAmmo = safeNumber(gunner, "GetMaxAmmo", -1)
     local ammo = safeNumber(gunner, "GetNWAmmo", -1)
-    local overheated = false
+    local ammoLimited = maxAmmo > 0
 
+    local overheated = false
     if isfunction(gunner.GetNWOverheated) then
         local heatOk, value = pcall(gunner.GetNWOverheated, gunner)
         overheated = not heatOk or value == true
+    elseif isfunction(gunner.GetOverheated) then
+        local heatOk, value = pcall(gunner.GetOverheated, gunner)
+        overheated = not heatOk or value == true
     end
 
-    return true, clip > 0 and not overheated, clip, ammo, overheated
+    local clipConfigured = isnumber(activeWeapon.Clip) and activeWeapon.Clip > 0
+    local ammoReady = not ammoLimited or ammo > 0
+    local clipRelevant = ammoLimited or clipConfigured
+    local clipReady = not clipRelevant or clip > 0
+    local ready = ammoReady and clipReady and not overheated
+    local reason = overheated and "Weapon overheated" or
+        (not ammoReady and "Out of ammo" or
+         (not clipReady and "Weapon clip/heat capacity depleted" or "Weapon ready"))
+    return true, ready, clip, ammo, overheated, ammoLimited, reason, clipRelevant
 end
 
 local function isMuzzleAligned(base, host, target)
@@ -149,10 +167,12 @@ local function isMuzzleAligned(base, host, target)
 
     local tolerance = tonumber(target.tolerance) or
         (istable(host) and tonumber(host.aim_tolerance_deg)) or 1.5
-    local yawError = math.abs(math.AngleDifference(muzzleAngle.y, target.yaw))
-    local pitchError = math.abs(math.AngleDifference(muzzleAngle.p, target.pitch))
+    local desiredForward = Angle(target.pitch, target.yaw, 0):Forward()
+    local actualForward = muzzleAngle:Forward()
+    local cosine = math.Clamp(desiredForward:Dot(actualForward), -1, 1)
+    local errorDegrees = math.deg(math.acos(cosine))
 
-    return yawError <= tolerance and pitchError <= tolerance, muzzleAngle
+    return errorDegrees <= tolerance, muzzleAngle, errorDegrees
 end
 
 local function readGravity()
@@ -174,13 +194,55 @@ local function writeState(host)
     end
 
     local eye = IsValid(ply) and ply:EyeAngles() or angle_zero
+    local eyeForward = IsValid(ply) and ply:EyeAngles():Forward() or vector_origin
+    local aimForward = IsValid(ply) and ply:GetAimVector() or vector_origin
+    local playerAim = aimForward:Angle()
     local eyePosition = IsValid(ply) and ply:EyePos() or vector_origin
     local playerPosition = IsValid(ply) and ply:GetPos() or vector_origin
     local vehiclePosition = inVehicle and base:GetPos() or vector_origin
     local vehicleAngles = inVehicle and base:GetAngles() or angle_zero
-    local hasGunner, gunnerReady, clip, ammo, overheated =
+
+    local viewOrigin = eyePosition
+    local viewAttachment = ""
+    if inVehicle then
+        local viewName = isstring(base.TurretBallisticsViewAttachment)
+            and base.TurretBallisticsViewAttachment or "sight"
+        local lookupOk, viewIndex = pcall(base.LookupAttachment, base, viewName)
+        if lookupOk and isnumber(viewIndex) and viewIndex > 0 then
+            local attachmentOk, attachment = pcall(base.GetAttachment, base, viewIndex)
+            if attachmentOk and istable(attachment) and isvector(attachment.Pos) then
+                viewOrigin = attachment.Pos
+                viewAttachment = viewName
+            end
+        end
+    end
+
+    local zoomHeld = false
+    if IsValid(ply) and isfunction(ply.lvsKeyDown) then
+        local zoomOk, value = pcall(ply.lvsKeyDown, ply, "ZOOM")
+        zoomHeld = zoomOk and value == true
+    end
+    local thirdPerson = false
+    if IsValid(seat) and isfunction(seat.GetThirdPersonMode) then
+        local thirdOk, value = pcall(seat.GetThirdPersonMode, seat)
+        thirdPerson = thirdOk and value == true
+    end
+    local predictedBallistics = inVehicle and base.TurretBallisticsPredicted == true
+    local zoomOnly = inVehicle and base.OpticsZoomOnly == true
+    local uprightZ = inVehicle and base:GetUp().z or 1
+    local uprightThreshold = inVehicle and tonumber(base.TurretBallisticsUpright) or 0.6
+    local lvsBallisticsActive = predictedBallistics and uprightZ >= uprightThreshold
+        and not thirdPerson and (not zoomOnly or zoomHeld)
+    local lvsBallisticsVelocity = inVehicle
+        and tonumber(base.TurretBallisticsProjectileVelocity) or 0
+    local hasGunner, gunnerReady, clip, ammo, overheated, ammoLimited, weaponReason, clipRelevant =
         weaponReadiness(seat, ply)
-    local aimAligned = inVehicle and isMuzzleAligned(base, host) or false
+    local aimAligned, muzzleError = false, nil
+    if inVehicle then
+        local aligned, _, errorDegrees = isMuzzleAligned(base, host)
+        aimAligned = aligned
+        muzzleError = errorDegrees
+    end
 
     local state = {
         protocol = PROTOCOL,
@@ -194,7 +256,11 @@ local function writeState(host)
             and seat:lvsGetPodIndex() or -1,
         eye = { x = eye.p, y = eye.y, z = eye.r },
         eye_angles = { pitch = eye.p, yaw = eye.y, roll = eye.r },
+        view_forward = { x = eyeForward.x, y = eyeForward.y, z = eyeForward.z },
+        player_aim_angles = { pitch = playerAim.p, yaw = playerAim.y, roll = playerAim.r },
         eye_position = { x = eyePosition.x, y = eyePosition.y, z = eyePosition.z },
+        view_origin = { x = viewOrigin.x, y = viewOrigin.y, z = viewOrigin.z },
+        view_attachment = viewAttachment,
         player_position = {
             x = playerPosition.x, y = playerPosition.y, z = playerPosition.z
         },
@@ -214,14 +280,28 @@ local function writeState(host)
         } or {},
         turret_yaw = inVehicle and safeNumber(base, "GetTurretYaw", 0) or 0,
         turret_pitch = inVehicle and safeNumber(base, "GetTurretPitch", 0) or 0,
+        turret_ballistics_predicted = predictedBallistics,
+        turret_ballistics_active = lvsBallisticsActive,
+        turret_ballistics_velocity = lvsBallisticsVelocity,
+        turret_optics_zoom_only = zoomOnly,
+        zoom_held = zoomHeld,
+        third_person_mode = thirdPerson,
+        turret_upright_z = uprightZ,
         gravity = readGravity(),
         gunner_present = hasGunner,
         gunner_ready = gunnerReady,
-        fire_ready = hasGunner and gunnerReady and aimAligned and not overheated,
+        weapon_reason = weaponReason or "",
+        ammo_limited = ammoLimited,
+        clip_relevant = clipRelevant,
+        fire_ready = inVehicle and hasGunner and gunnerReady and isvector(muzzlePosition)
+            and aimAligned and not overheated,
         aim_aligned = aimAligned,
+        muzzle_error_deg = muzzleError,
         ammo_clip = clip,
         ammo_reserve = ammo,
         overheated = overheated,
+        server_fire_ack = serverFireAck,
+        server_fire_message = serverFireMessage,
         aim_active = aimCommand ~= nil,
         last_command_seq = acknowledgedSequence,
         command_ack = commandAck,
@@ -243,9 +323,8 @@ local function processCommand()
     if not hostAlive then
         aimCommand = nil
         lastAim = nil
-        firePulse = false
-        attackPulsePending = false
-        attackPulseExpires = 0
+        serverFireAck = "disconnected"
+        serverFireMessage = "Desktop heartbeat expired"
         return nil
     end
 
@@ -255,9 +334,8 @@ local function processCommand()
         acknowledgedSequence = 0
         aimCommand = nil
         lastAim = nil
-        firePulse = false
-        attackPulsePending = false
-        attackPulseExpires = 0
+        serverFireAck = "idle"
+        serverFireMessage = "Server fire channel ready"
         commandAck = "connected"
         commandMessage = "TFC desktop session connected"
     end
@@ -288,7 +366,11 @@ local function processCommand()
             else
                 local tolerance = tonumber(host.aim_tolerance_deg) or 1.5
                 local step = tonumber(host.aim_step_deg_per_tick) or 2.0
-                lastAim = { yaw = yaw, pitch = pitch, tolerance = tolerance }
+                lastAim = {
+                    yaw = tonumber(command.muzzle_yaw) or yaw,
+                    pitch = tonumber(command.muzzle_pitch) or pitch,
+                    tolerance = tolerance
+                }
                 aimCommand = {
                     yaw = yaw,
                     pitch = pitch,
@@ -300,30 +382,41 @@ local function processCommand()
             end
         end
     elseif kind == "fire" then
-        local hasGunner, ready, clip, _, heat = weaponReadiness(seat, ply)
+        local hasGunner, ready, _, _, heat, _, reason = weaponReadiness(seat, ply)
         local requested = {
-            yaw = tonumber(command.world_yaw),
-            pitch = tonumber(command.view_pitch),
+            yaw = tonumber(command.muzzle_yaw) or tonumber(command.world_yaw),
+            pitch = tonumber(command.muzzle_pitch) or tonumber(command.view_pitch),
             tolerance = tonumber(host.aim_tolerance_deg) or 1.5
         }
         local aligned = requested.yaw and requested.pitch and
             isMuzzleAligned(base, host, requested)
 
         if not IsValid(base) or base.LVS ~= true or not hasGunner or
-           not ready or clip <= 0 or heat or not aligned then
+           not ready or heat or not aligned then
             commandAck = "fire_rejected"
-            commandMessage = "Blocked: physical muzzle alignment or LVS weapon readiness not confirmed"
+            commandMessage = not hasGunner and "No active LVS weapon handler" or
+                (not ready and (reason or "Weapon is not ready") or
+                 "Blocked: actual muzzle is not aligned")
         else
-            firePulse = true
-            commandAck = "fire_queued"
-            commandMessage = "One LVS ATTACK pulse queued"
+            local sent, sendError = pcall(function()
+                net.Start("tfc_bridge_fire_request")
+                net.SendToServer()
+            end)
+            if sent then
+                serverFireAck = "request_sent"
+                serverFireMessage = "Fire request sent to the LVS server"
+                commandAck = "fire_sent_to_server"
+                commandMessage = serverFireMessage
+            else
+                serverFireAck = "request_failed"
+                serverFireMessage = tostring(sendError)
+                commandAck = "fire_rejected"
+                commandMessage = "Server fire channel unavailable: " .. tostring(sendError)
+            end
         end
     elseif kind == "cancel" then
         aimCommand = nil
         lastAim = nil
-        firePulse = false
-        attackPulsePending = false
-        attackPulseExpires = 0
         commandAck = "cancelled"
         commandMessage = "Aim cancelled"
     else
@@ -349,7 +442,7 @@ hook.Add("CreateMove", "TFC_Bridge_CreateMove", function(cmd)
                 0
             ))
 
-            local base, _, ply = getLVSContext()
+            local base = getLVSContext()
             local host = readJson(HOST_FILE)
             local aligned = isMuzzleAligned(base, host)
             if aligned then
@@ -360,32 +453,19 @@ hook.Add("CreateMove", "TFC_Bridge_CreateMove", function(cmd)
         end
     end
 
-    if firePulse then
-        firePulse = false
-        attackPulsePending = true
-        attackPulseExpires = CurTime() + 0.15
-        commandAck = "fire_pulse_sent"
-        commandMessage = "One-shot LVS ATTACK pulse armed"
-    end
 end)
 
--- Standard LVS action identifier is ATTACK. This overrides the LVS key-state
--- hook for a short single pulse rather than holding the regular mouse button.
-hook.Add("LVS.PlayerKeyDown", "TFC_Bridge_AttackPulse", function(ply, actionName)
-    if ply == LocalPlayer() and actionName == "ATTACK" and
-       attackPulsePending and CurTime() <= attackPulseExpires then
-        attackPulsePending = false -- consume exactly once
-        return true
-    end
+net.Receive("tfc_bridge_fire_ack", function()
+    local accepted = net.ReadBool()
+    local message = net.ReadString()
+    serverFireAck = accepted and "server_accepted" or "server_rejected"
+    serverFireMessage = message
+    commandAck = accepted and "fire_server_accepted" or "fire_server_rejected"
+    commandMessage = message
 end)
 
 timer.Create("TFC_Bridge_Poll", 0.10, 0, function()
     local host = processCommand()
-    if attackPulsePending and CurTime() > attackPulseExpires then
-        attackPulsePending = false
-        commandAck = "fire_pulse_expired"
-        commandMessage = "LVS did not consume the queued ATTACK pulse"
-    end
     if not istable(host) then return end
 
     if CurTime() - lastStateWrite >= 0.25 then
