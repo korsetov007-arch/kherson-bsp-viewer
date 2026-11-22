@@ -9,7 +9,24 @@ qt_add_executable(tfc WIN32 src/main.cpp src/file_bridge.cpp src/ballistics.cpp 
 target_include_directories(tfc PRIVATE include)
 target_link_libraries(tfc PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
 if(WIN32)
- target_link_libraries(tfc PRIVATE user32)
+ find_program(TFC_WINDEPLOYQT_EXECUTABLE
+  NAMES windeployqt.exe windeployqt
+  HINTS "${Qt6_DIR}/../../../bin"
+ )
+ if(TFC_WINDEPLOYQT_EXECUTABLE)
+  add_custom_command(TARGET tfc POST_BUILD
+   COMMAND "${TFC_WINDEPLOYQT_EXECUTABLE}"
+    "$<IF:$<CONFIG:Debug>,--debug,--release>"
+    --no-translations "$<TARGET_FILE:tfc>"
+   COMMENT "Deploying Qt runtime libraries"
+   VERBATIM
+  )
+ else()
+  message(WARNING "windeployqt was not found; the Qt runtime will not be copied next to tfc.exe.")
+ endif()
+endif()
+if(WIN32)
+ target_link_libraries(tfc PRIVATE user32 shell32)
 endif()
 if(MSVC)
  target_compile_options(tfc PRIVATE /W4 /permissive- /utf-8)

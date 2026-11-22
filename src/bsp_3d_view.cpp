@@ -111,8 +111,7 @@ double edgeFunction(const ScreenVertex &a, const ScreenVertex &b,
 // Interpolating inverse depth is perspective-correct for screen-space triangles.
 void rasterizeTriangle(QImage &image, std::vector<double> &depthBuffer,
                        const QRectF &viewport, const ScreenVertex &a,
-                       const ScreenVertex &b, const ScreenVertex &c, QRgb color,
-                       quint64 *fragmentsWritten, quint64 *fragmentsOccluded) {
+                       const ScreenVertex &b, const ScreenVertex &c, QRgb color) {
     const double area = edgeFunction(a, b, c.x, c.y);
     if (!std::isfinite(area) || std::abs(area) < 1e-8) return;
 
@@ -149,12 +148,10 @@ void rasterizeTriangle(QImage &image, std::vector<double> &depthBuffer,
                                  static_cast<size_t>(imageWidth) +
                                  static_cast<size_t>(x);
             if (depth >= depthBuffer[index]) {
-                if (fragmentsOccluded) ++(*fragmentsOccluded);
                 continue;
             }
             depthBuffer[index] = depth;
             pixels[x] = color;
-            if (fragmentsWritten) ++(*fragmentsWritten);
         }
     }
 }
@@ -166,8 +163,9 @@ Bsp3DView::Bsp3DView(QWidget *parent) : QWidget(parent) {
     setMouseTracking(true);
     setCursor(Qt::OpenHandCursor);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip(uiText("Left-drag: orbit · wheel: zoom · double-click: reset view",
-                      "ЛКМ + перетаскивание: орбита · колесо: масштаб · двойной щелчок: сброс"));
+    setToolTip(uiText(
+        "Click: select a target · drag: orbit · wheel: zoom · double-click: reset view",
+        "Клик: выбрать цель · перетаскивание: вращение · колесо: масштаб · двойной щелчок: сброс"));
     setStyleSheet(QStringLiteral("background: #1a1e24;"));
 }
 
@@ -185,13 +183,6 @@ void Bsp3DView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPoly
     double minX = 0.0, maxX = 0.0, minY = 0.0, maxY = 0.0;
     minZ_ = std::numeric_limits<double>::max();
     maxZ_ = std::numeric_limits<double>::lowest();
-
-    bool haveFaceBounds = false;
-    bool haveDisplacementBounds = false;
-    double faceMinX = 0.0, faceMaxX = 0.0, faceMinY = 0.0, faceMaxY = 0.0;
-    double faceMinZ = 0.0, faceMaxZ = 0.0;
-    double dispMinX = 0.0, dispMaxX = 0.0, dispMinY = 0.0, dispMaxY = 0.0;
-    double dispMinZ = 0.0, dispMaxZ = 0.0;
 
     for (const BspPolygon &polygon : polygons_) {
         for (const BspVertex &vertex : polygon.vertices) {
@@ -212,46 +203,12 @@ void Bsp3DView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPoly
                 maxZ_ = std::max(maxZ_, point.z);
             }
 
-            bool &haveTypeBounds = polygon.displacementSurface
-                ? haveDisplacementBounds : haveFaceBounds;
-            double &typeMinX = polygon.displacementSurface ? dispMinX : faceMinX;
-            double &typeMaxX = polygon.displacementSurface ? dispMaxX : faceMaxX;
-            double &typeMinY = polygon.displacementSurface ? dispMinY : faceMinY;
-            double &typeMaxY = polygon.displacementSurface ? dispMaxY : faceMaxY;
-            double &typeMinZ = polygon.displacementSurface ? dispMinZ : faceMinZ;
-            double &typeMaxZ = polygon.displacementSurface ? dispMaxZ : faceMaxZ;
-            if (!haveTypeBounds) {
-                typeMinX = typeMaxX = point.x;
-                typeMinY = typeMaxY = point.y;
-                typeMinZ = typeMaxZ = point.z;
-                haveTypeBounds = true;
-            } else {
-                typeMinX = std::min(typeMinX, point.x);
-                typeMaxX = std::max(typeMaxX, point.x);
-                typeMinY = std::min(typeMinY, point.y);
-                typeMaxY = std::max(typeMaxY, point.y);
-                typeMinZ = std::min(typeMinZ, point.z);
-                typeMaxZ = std::max(typeMaxZ, point.z);
-            }
         }
     }
 
-    const QString faceBoundsText = haveFaceBounds
-        ? QStringLiteral("X[%1,%2] Y[%3,%4] Z[%5,%6]")
-              .arg(faceMinX, 0, 'f', 0).arg(faceMaxX, 0, 'f', 0)
-              .arg(faceMinY, 0, 'f', 0).arg(faceMaxY, 0, 'f', 0)
-              .arg(faceMinZ, 0, 'f', 0).arg(faceMaxZ, 0, 'f', 0)
-        : QStringLiteral("none");
-    const QString displacementBoundsText = haveDisplacementBounds
-        ? QStringLiteral("X[%1,%2] Y[%3,%4] Z[%5,%6]")
-              .arg(dispMinX, 0, 'f', 0).arg(dispMaxX, 0, 'f', 0)
-              .arg(dispMinY, 0, 'f', 0).arg(dispMaxY, 0, 'f', 0)
-              .arg(dispMinZ, 0, 'f', 0).arg(dispMaxZ, 0, 'f', 0)
-        : QStringLiteral("none");
     setToolTip(uiText(
-        "BSP face bounds: %1\nDisplacement bounds: %2",
-        "Границы BSP faces: %1\nГраницы displacement: %2")
-        .arg(faceBoundsText, displacementBoundsText));
+        "Click a visible surface to select a target; drag to orbit and use the wheel to zoom.",
+        "Кликни по видимой поверхности, чтобы выбрать цель; перетаскивай для вращения, колесо — масштаб."));
 
     if (!haveBounds) {
         centerX_ = centerY_ = centerZ_ = 0.0;
@@ -291,6 +248,7 @@ void Bsp3DView::setMap(const QVector<BspVertex> &vertices, const QVector<BspPoly
 void Bsp3DView::clearMap() {
     vertices_.clear();
     polygons_.clear();
+    hasTarget_ = false;
     centerX_ = centerY_ = centerZ_ = 0.0;
     minZ_ = 0.0;
     maxZ_ = 1.0;
@@ -300,6 +258,24 @@ void Bsp3DView::clearMap() {
     zoom_ = 1.0;
     dragging_ = false;
     update();
+}
+
+void Bsp3DView::setTarget(double x, double y, double z) {
+    targetX_ = x;
+    targetY_ = y;
+    targetZ_ = z;
+    hasTarget_ = true;
+    update();
+}
+
+void Bsp3DView::clearTarget() {
+    hasTarget_ = false;
+    update();
+}
+
+void Bsp3DView::setTargetCallback(
+    std::function<void(double, double, double)> callback) {
+    targetCallback_ = std::move(callback);
 }
 
 QRectF Bsp3DView::viewportRect() const {
@@ -348,21 +324,8 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
     const double nearPlane = std::max(1e-4, mapDiameter_ * 1e-5);
     const double zSpan = std::max(1.0, maxZ_ - minZ_);
     const Vec3 lightDirection = normalized(Vec3{-0.42, -0.56, 0.72});
-    int sourceFacePolygons = 0;
-    int displacementPolygons = 0;
-    int sourceProjectedTriangles = 0;
-    int displacementProjectedTriangles = 0;
-    int sourceRasterizedTriangles = 0;
-    int displacementRasterizedTriangles = 0;
-    quint64 sourceFragmentsWritten = 0;
-    quint64 displacementFragmentsWritten = 0;
-    quint64 sourceFragmentsOccluded = 0;
-    quint64 displacementFragmentsOccluded = 0;
-
     for (const BspPolygon &face : polygons_) {
         if (face.vertices.size() < 3) continue;
-        if (face.displacementSurface) ++displacementPolygons;
-        else ++sourceFacePolygons;
 
         // Find a stable face normal; the first three points can be collinear on
         // some imported faces even though a later triple defines the plane.
@@ -469,43 +432,109 @@ void Bsp3DView::paintEvent(QPaintEvent *event) {
                 triangleMaxY < viewport.top() || triangleMinY > viewport.bottom())
                 continue;
 
-            quint64 &pixelCounter = face.displacementSurface
-                ? displacementFragmentsWritten : sourceFragmentsWritten;
-            quint64 &occludedCounter = face.displacementSurface
-                ? displacementFragmentsOccluded : sourceFragmentsOccluded;
-            const quint64 pixelsBefore = pixelCounter;
-            rasterizeTriangle(meshImage, depthBuffer, viewport, a, b, c,
-                              faceColor, &pixelCounter, &occludedCounter);
-            if (face.displacementSurface) {
-                ++displacementProjectedTriangles;
-                if (pixelCounter > pixelsBefore) ++displacementRasterizedTriangles;
-            } else {
-                ++sourceProjectedTriangles;
-                if (pixelCounter > pixelsBefore) ++sourceRasterizedTriangles;
-            }
+            rasterizeTriangle(
+                meshImage, depthBuffer, viewport, a, b, c, faceColor);
         }
     }
 
     painter.drawImage(QPoint(0, 0), meshImage);
+    if (hasTarget_) {
+        const Vec3 relative =
+            Vec3{targetX_, targetY_, targetZ_} - camera.cameraPosition;
+        const double depth = dot(relative, camera.forward);
+        if (depth >= nearPlane) {
+            const QPointF marker(
+                viewport.center().x() +
+                    dot(relative, camera.right) * focalLength / depth,
+                viewport.center().y() -
+                    dot(relative, camera.up) * focalLength / depth);
+            const int pixelX = static_cast<int>(std::lround(marker.x()));
+            const int pixelY = static_cast<int>(std::lround(marker.y()));
+            if (viewport.contains(marker) && pixelX >= 0 && pixelY >= 0 &&
+                pixelX < meshImage.width() && pixelY < meshImage.height() &&
+                depth <= depthBuffer[static_cast<size_t>(pixelY) *
+                                    static_cast<size_t>(meshImage.width()) +
+                                    static_cast<size_t>(pixelX)] + 1.0) {
+                painter.setPen(QPen(QColor(255, 178, 76), 2));
+                painter.drawLine(marker + QPointF(-10, 0), marker + QPointF(10, 0));
+                painter.drawLine(marker + QPointF(0, -10), marker + QPointF(0, 10));
+                painter.drawEllipse(marker, 5, 5);
+            }
+        }
+    }
     painter.setPen(QColor(226, 232, 241));
-    painter.drawText(QRectF(10, 2, width() - 20, 17), Qt::AlignLeft | Qt::AlignVCenter,
-        uiText("Orbit 3D · drag: orbit · wheel: zoom (up to 24x) · double-click: reset",
-               "3D-орбита · ЛКМ: вращение · колесо: зум до 24× · двойной щелчок: сброс"));
-    painter.setPen(QColor(175, 198, 218));
-    painter.drawText(QRectF(10, 20, width() - 20, 17), Qt::AlignLeft | Qt::AlignVCenter,
-        uiText("BSP faces %1: tris %2/%3, frags %4, Z-rejected %5 | displacement %6: tris %7/%8, frags %9, Z-rejected %10",
-               "Грани BSP %1: треугольники %2/%3, фрагменты %4, скрыто по Z %5 | displacement %6: треугольники %7/%8, фрагменты %9, скрыто по Z %10")
-            .arg(sourceFacePolygons)
-            .arg(sourceRasterizedTriangles).arg(sourceProjectedTriangles)
-            .arg(sourceFragmentsWritten).arg(sourceFragmentsOccluded)
-            .arg(displacementPolygons)
-            .arg(displacementRasterizedTriangles).arg(displacementProjectedTriangles)
-            .arg(displacementFragmentsWritten).arg(displacementFragmentsOccluded));
+    painter.setPen(QColor(226, 232, 241));
+    painter.drawText(QRectF(10, 8, width() - 20, 20), Qt::AlignLeft | Qt::AlignVCenter,
+        uiText("Click a surface to select · drag to orbit · wheel to zoom · double-click to reset",
+               "Клик — выбрать цель · перетаскивание — вращать · колесо — масштаб · двойной щелчок — сброс"));
+}
+
+bool Bsp3DView::pickTarget(
+    const QPointF &screenPosition, double &x, double &y, double &z) const {
+    const QRectF viewport = viewportRect();
+    if (!viewport.contains(screenPosition) || polygons_.isEmpty())
+        return false;
+
+    const double cameraDistance = mapDiameter_ * 2.5 / zoom_;
+    const CameraBasis camera =
+        makeCamera(centerX_, centerY_, centerZ_, yaw_, pitch_, cameraDistance);
+    const double focalLength = std::min(viewport.width(), viewport.height()) * 2.0;
+    if (focalLength <= 0.0)
+        return false;
+
+    const Vec3 ray = normalized(
+        camera.forward +
+        camera.right * ((screenPosition.x() - viewport.center().x()) / focalLength) +
+        camera.up * ((viewport.center().y() - screenPosition.y()) / focalLength));
+    const Vec3 origin = camera.cameraPosition;
+    double nearest = std::numeric_limits<double>::infinity();
+
+    for (const BspPolygon &polygon : polygons_) {
+        if (polygon.vertices.size() < 3)
+            continue;
+
+        const Vec3 first = toVec(polygon.vertices[0]);
+        for (qsizetype i = 1; i + 1 < polygon.vertices.size(); ++i) {
+            const Vec3 second = toVec(polygon.vertices[i]);
+            const Vec3 third = toVec(polygon.vertices[i + 1]);
+            const Vec3 edge1 = second - first;
+            const Vec3 edge2 = third - first;
+            const Vec3 p = cross(ray, edge2);
+            const double determinant = dot(edge1, p);
+            if (std::abs(determinant) < 1e-9)
+                continue;
+
+            const double inverseDeterminant = 1.0 / determinant;
+            const Vec3 fromFirst = origin - first;
+            const double u = dot(fromFirst, p) * inverseDeterminant;
+            if (u < 0.0 || u > 1.0)
+                continue;
+
+            const Vec3 q = cross(fromFirst, edge1);
+            const double v = dot(ray, q) * inverseDeterminant;
+            if (v < 0.0 || u + v > 1.0)
+                continue;
+
+            const double distance = dot(edge2, q) * inverseDeterminant;
+            if (distance > 0.0 && distance < nearest)
+                nearest = distance;
+        }
+    }
+
+    if (!std::isfinite(nearest))
+        return false;
+
+    const Vec3 point = origin + ray * nearest;
+    x = point.x;
+    y = point.y;
+    z = point.z;
+    return true;
 }
 
 void Bsp3DView::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton && !polygons_.isEmpty()) {
         dragging_ = true;
+        pressMousePosition_ = event->position().toPoint();
         lastMousePosition_ = event->position().toPoint();
         setCursor(Qt::ClosedHandCursor);
         grabMouse();
@@ -520,7 +549,8 @@ void Bsp3DView::mouseMoveEvent(QMouseEvent *event) {
         const QPoint current = event->position().toPoint();
         const QPoint delta = current - lastMousePosition_;
         lastMousePosition_ = current;
-        if (!delta.isNull()) {
+        if ((current - pressMousePosition_).manhattanLength() > 5 &&
+            !delta.isNull()) {
             yaw_ = std::remainder(yaw_ + delta.x() * 0.009, 2.0 * std::numbers::pi);
             pitch_ = std::clamp(pitch_ - delta.y() * 0.009, -1.42, 1.42);
             update();
@@ -536,6 +566,16 @@ void Bsp3DView::mouseReleaseEvent(QMouseEvent *event) {
         dragging_ = false;
         releaseMouse();
         setCursor(Qt::OpenHandCursor);
+        if ((event->position().toPoint() - pressMousePosition_).manhattanLength() <= 5) {
+            double x = 0.0;
+            double y = 0.0;
+            double z = 0.0;
+            if (pickTarget(event->position(), x, y, z)) {
+                setTarget(x, y, z);
+                if (targetCallback_)
+                    targetCallback_(x, y, z);
+            }
+        }
         event->accept();
         return;
     }

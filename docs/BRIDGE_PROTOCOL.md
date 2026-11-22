@@ -9,21 +9,23 @@ The desktop atomically replaces command files using QSaveFile. Lua ignores stale
 
 ## Telemetry and angles
 
-Lua reads both position and angle from the configured LVS muzzle attachment's `GetAttachment(index)` result:
+Lua reads the local player's `GetPos()`, `EyePos()`, and `EyeAngles()`, the LVS vehicle's transform, and the muzzle attachment's `GetAttachment(index)` result:
 - `muzzle.x/y/z`: actual in-game attachment position, used as the projectile origin.
 - `muzzle_angle.yaw/pitch/roll`: actual world-space attachment angle from the game.
+- `player_position`, `eye_position`, `eye_angles`: player position and camera state.
+- `vehicle_position`, `vehicle_angles`: vehicle transform.
 - `turret_yaw/pitch`: LVS turret state for diagnostics.
 
-TFC uses the actual muzzle position to solve the path and the actual muzzle angle to determine whether the barrel has reached the requested direction. Camera/player angles are only used as the input that lets the standard LVS turret controller move; they are not treated as proof of barrel alignment.
+TFC aims directly from the actual muzzle position to the selected BSP point. The actual muzzle angle determines whether the barrel has reached the requested direction. Camera/player angles are only the input to the standard LVS turret controller; they are not treated as proof of barrel alignment. Automatic muzzle lookup tries the vehicle's `TurretBallisticsMuzzleAttachment` setting, then common names (`muzzle`, `muzzle_2`, `muzzle_1` through `muzzle_12`).
 
 ## Commands
 
-- `aim`: desired world yaw and Source pitch. The addon changes player view angles through CreateMove; LVS then drives its turret normally.
+- `aim`: desired world yaw and Source pitch for direct line-of-sight to the selected point. The addon changes player view angles through CreateMove; LVS then drives its turret normally.
 - `fire`: a single temporary `LVS.PlayerKeyDown` override for the standard LVS `ATTACK` action, gated on physical muzzle-angle tolerance, gunner presence, clip availability and no overheat.
 - `cancel`: clear active aim and pending fire.
 
 ## Developer settings
 
-The desktop reads `tfc.cfg` next to its executable. Settings are sent to Lua in `host.json`: muzzle attachment override, physical barrel-angle tolerance and view approach step. The ballistic solver uses projectile speed and gravity from that file. Defaults are 4000 units/s and gravity 600.
+The desktop reads `tfc.cfg` next to its executable. Settings are sent to Lua in `host.json`: muzzle attachment override, physical barrel-angle tolerance and view approach step.
 
-The exact BM-30 addon must still be tested in-game. The speed is a planning baseline, not a verified shell speed, and a custom addon may use a non-standard muzzle attachment or weapon input.
+Different BM-30 addons can use different rocket behavior, muzzle attachments, and weapon inputs. The bridge does not assume a projectile speed or simulate a ballistic path. Test F7/F8 in the actual game setup; readiness feedback does not guarantee launch or impact.

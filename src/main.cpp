@@ -1,15 +1,16 @@
 #include "app_language.hpp"
-#include "ballistics.hpp"
 #include "bsp_3d_view.hpp"
 #include "bsp_file.hpp"
 #include "file_bridge.hpp"
 #include "topdown_picker.hpp"
 
 #include <QApplication>
+#include <QAction>
 #include <QCoreApplication>
 #include <QByteArray>
 #include <QDir>
-#include <QDoubleSpinBox>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -19,29 +20,119 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QMenu>
+#include <QMenuBar>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSettings>
 #include <QStatusBar>
 #include <QTabWidget>
+#include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
+#include <cmath>
+#include <numbers>
+#include <string>
 #include <utility>
 
 #ifdef Q_OS_WIN
 #define NOMINMAX
 #include <windows.h>
+#include <shellapi.h>
 #endif
 
 struct DeveloperConfig {
-    double projectileSpeed = 4000.0;
-    double gravity = 600.0;
     double aimToleranceDeg = 1.5;
     double aimStepDegPerTick = 2.0;
     QString muzzleAttachment = QStringLiteral("auto");
     QString path;
 };
+
+bool installBridgeFile(const QString &garrysmodDirectory, QString *error)
+{
+    if (!QDir(garrysmodDirectory).exists("addons")) {
+        if (error) *error = "В выбранной папке нет каталога addons.";
+        return false;
+    }
+
+    QFile embedded(":/tfc_bridge.lua");
+    if (!embedded.open(QIODevice::ReadOnly)) {
+        if (error) *error = "Не удалось прочитать встроенный Lua bridge.";
+        return false;
+    }
+    const QByteArray addonBytes = embedded.readAll();
+    const QString addonPath = QDir(garrysmodDirectory).filePath(
+        "addons/tfc_bridge/lua/autorun/client/tfc_bridge.lua");
+    if (!QDir().mkpath(QFileInfo(addonPath).absolutePath())) {
+        if (error) *error = "Windows не разрешила создать папку аддона.";
+        return false;
+    }
+
+    QSaveFile target(addonPath);
+    if (!target.open(QIODevice::WriteOnly)) {
+        if (error) *error = target.errorString();
+        return false;
+    }
+    if (target.write(addonBytes) != addonBytes.size()) {
+        if (error) *error = target.errorString();
+        target.cancelWriting();
+        return false;
+    }
+    if (!target.commit()) {
+        if (error) *error = target.errorString();
+        return false;
+    }
+    return true;
+}
+
+bool installBridgeElevated(const QString &garrysmodDirectory, QString *error)
+{
+#ifdef Q_OS_WIN
+    const std::wstring executable =
+        QCoreApplication::applicationFilePath().toStdWString();
+    const std::wstring workingDirectory =
+        QCoreApplication::applicationDirPath().toStdWString();
+    const std::wstring parameters =
+        QStringLiteral("--install-bridge \"%1\"")
+            .arg(garrysmodDirectory).toStdWString();
+
+    SHELLEXECUTEINFOW launch{};
+    launch.cbSize = sizeof(launch);
+    launch.fMask = SEE_MASK_NOCLOSEPROCESS;
+    launch.lpVerb = L"runas";
+    launch.lpFile = executable.c_str();
+    launch.lpParameters = parameters.c_str();
+    launch.lpDirectory = workingDirectory.c_str();
+    launch.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&launch)) {
+        const DWORD code = GetLastError();
+        if (error) {
+            *error = code == ERROR_CANCELLED
+                ? "Запрос UAC отменён."
+                : QString("Не удалось запустить установщик (код Windows %1).").arg(code);
+        }
+        return false;
+    }
+
+    const DWORD waitResult = WaitForSingleObject(launch.hProcess, INFINITE);
+    DWORD exitCode = 1;
+    const bool gotExitCode =
+        waitResult == WAIT_OBJECT_0 &&
+        GetExitCodeProcess(launch.hProcess, &exitCode) != FALSE;
+    CloseHandle(launch.hProcess);
+    if (!gotExitCode || exitCode != 0) {
+        if (error) *error = "Установка с правами администратора завершилась ошибкой.";
+        return false;
+    }
+    return true;
+#else
+    Q_UNUSED(garrysmodDirectory);
+    if (error) *error = "Повышенная установка доступна только в Windows.";
+    return false;
+#endif
+}
 
 class MainWindow final : public QMainWindow {
 public:
@@ -49,19 +140,28 @@ public:
     {
         developerConfig_ = loadDeveloperConfig();
         setWindowTitle("TFC — Tactical Fire Control");
-        resize(1120, 760);
+        resize(1180, 780);
+        setWindowFlag(Qt::WindowStaysOnTopHint);
         setAcceptDrops(true);
         setStyleSheet(
-            "QMainWindow { background:#20252c; color:#e6ebf2; }"
-            "QWidget { color:#e6ebf2; }"
-            "QPushButton { background:#343d48; border:1px solid #4b5664; padding:8px; }"
-            "QPushButton:hover { background:#414d5b; }"
-            "QPushButton:disabled { color:#6e7784; background:#292f37; }"
-            "QDoubleSpinBox { background:#171b21; border:1px solid #4b5664; padding:5px; }"
-            "QTabWidget::pane { border:1px solid #414a56; }"
-            "QTabBar::tab { background:#2a3038; padding:8px 14px; }"
-            "QTabBar::tab:selected { background:#414c59; }"
+            "QMainWindow { background:#161616; color:#e8e8e8; }"
+            "QWidget { color:#e8e8e8; }"
+            "QPushButton { background:#232323; border:1px solid #333333; padding:6px 14px; border-radius:4px; }"
+            "QPushButton:hover { background:#2d2d2d; border-color:#444444; }"
+            "QPushButton:pressed { background:#1a1a1a; }"
+            "QPushButton:disabled { color:#555555; background:#1c1c1c; border-color:#2a2a2a; }"
+            "QMenuBar { background:#161616; }"
+            "QTabWidget::pane { border:none; }"
+            "QTabBar::tab { background:#232323; padding:8px 16px; margin-right:2px; }"
+            "QTabBar::tab:selected { background:#161616; }"
+            "QLabel { color:#b0b0b0; }"
         );
+        auto *settingsMenu = menuBar()->addMenu("Настройки");
+        QAction *gameDirectoryAction =
+            settingsMenu->addAction("Папка Garry's Mod…");
+        connect(gameDirectoryAction, &QAction::triggered, this, [this] {
+            chooseGameDirectory();
+        });
 
         auto *root = new QWidget(this);
         auto *layout = new QHBoxLayout(root);
@@ -71,99 +171,52 @@ public:
         tabs_ = new QTabWidget(root);
         view3d_ = new bspvision::Bsp3DView(tabs_);
         topdown_ = new TopDownPicker(tabs_);
-        tabs_->addTab(view3d_, "3D map");
-        tabs_->addTab(topdown_, "Top-down / выбор цели");
+        tabs_->addTab(view3d_, "3D");
+        tabs_->addTab(topdown_, "Топ-даун X/Y");
         layout->addWidget(tabs_, 1);
 
         auto *side = new QWidget(root);
-        side->setMinimumWidth(290);
-        side->setMaximumWidth(340);
+        side->setMinimumWidth(150);
+        side->setMaximumWidth(170);
         auto *right = new QVBoxLayout(side);
         right->setContentsMargins(8, 4, 4, 4);
         right->setSpacing(7);
 
-        auto *brand = new QLabel(
-            "<b style='font-size:20px'>TFC</b><br/>TACTICAL FIRE CONTROL"
-            "<br/><span style='color:#9aa7b8'>BSP planner · Garry's Mod bridge</span>", side);
-        brand->setTextFormat(Qt::RichText);
-        right->addWidget(brand);
-
         auto *openButton = new QPushButton("Открыть BSP…", side);
-        auto *gameButton = new QPushButton("Путь к Garry's Mod…", side);
         right->addWidget(openButton);
-        right->addWidget(gameButton);
 
-        mapLabel_ = new QLabel(
-            "Карта не загружена.\nПеретащи .bsp на окно или выбери файл.", side);
+        mapLabel_ = new QLabel("Карта не загружена", side);
         mapLabel_->setWordWrap(true);
         right->addWidget(mapLabel_);
 
-        right->addWidget(new QLabel("<b>Цель (Source units)</b>", side));
-        targetX_ = makeSpin(side, -32768.0, 32768.0, 100.0);
-        targetY_ = makeSpin(side, -32768.0, 32768.0, 100.0);
-        targetZ_ = makeSpin(side, -32768.0, 32768.0, 0.0);
-        addField(right, "X", targetX_);
-        addField(right, "Y", targetY_);
-        addField(right, "Z", targetZ_);
+        targetLabel_ = new QLabel("Цель не выбрана", side);
+        targetLabel_->setWordWrap(true);
+        right->addWidget(targetLabel_);
 
-        auto *zHint = new QLabel(
-            "Высоту Z проверь вручную: на карте могут быть несколько уровней.", side);
-        zHint->setWordWrap(true);
-        zHint->setStyleSheet("color:#a8b0bd;");
-        right->addWidget(zHint);
-
-        right->addWidget(new QLabel("<b>Баллистический профиль</b>", side));
-        auto *profileHint = new QLabel(
-            QString("Developer CFG загружен · %1\n%2 ед/с · гравитация %3")
-                .arg(QFileInfo(developerConfig_.path).fileName())
-                .arg(developerConfig_.projectileSpeed, 0, 'f', 0)
-                .arg(developerConfig_.gravity, 0, 'f', 0), side);
-        profileHint->setWordWrap(true);
-        profileHint->setStyleSheet("color:#c5a879;");
-        profileHint->setToolTip(
-            "Для изменения параметров закрой TFC и отредактируй tfc.cfg рядом с EXE.");
-        right->addWidget(profileHint);
-
-        right->addWidget(new QLabel("<b>Lua bridge</b>", side));
+        right->addWidget(new QLabel("Мост GMod", side));
         bridgeLabel_ = new QLabel("Не настроен", side);
         bridgeLabel_->setWordWrap(true);
         right->addWidget(bridgeLabel_);
 
-        telemetryLabel_ = new QLabel("Ожидание телеметрии игры…", side);
-        telemetryLabel_->setWordWrap(true);
-        telemetryLabel_->setStyleSheet("color:#aeb9c8;");
-        right->addWidget(telemetryLabel_);
-
-        aimButton_ = new QPushButton("F7 — НАВЕСТИ", side);
-        fireButton_ = new QPushButton("F8 — ОДИН ВЫСТРЕЛ", side);
-        cancelButton_ = new QPushButton("Отменить наведение", side);
+        aimButton_ = new QPushButton("F7 — Навести", side);
+        fireButton_ = new QPushButton("F8 — Огонь", side);
+        fireButton_->setEnabled(false);
         right->addWidget(aimButton_);
         right->addWidget(fireButton_);
-        right->addWidget(cancelButton_);
         right->addStretch(1);
-
-        auto *hotkeyInfo = new QLabel(
-            "Глобальные клавиши: F7 — наведение, F8 — одиночный импульс ATTACK. "
-            "Сначала запусти Garry's Mod, затем TFC.", side);
-        hotkeyInfo->setWordWrap(true);
-        hotkeyInfo->setStyleSheet("color:#a8b0bd;");
-        right->addWidget(hotkeyInfo);
 
         layout->addWidget(side);
         setCentralWidget(root);
 
         connect(openButton, &QPushButton::clicked, this, [this] { chooseBsp(); });
-        connect(gameButton, &QPushButton::clicked, this, [this] { chooseGameDirectory(); });
         connect(aimButton_, &QPushButton::clicked, this, [this] { aim(); });
         connect(fireButton_, &QPushButton::clicked, this, [this] { fire(); });
-        connect(cancelButton_, &QPushButton::clicked, this, [this] {
-            bridge_.sendCancel();
-            setStatus("Наведение отменено.");
-        });
 
+        view3d_->setTargetCallback([this](double x, double y, double z) {
+            setTarget(x, y, z);
+        });
         topdown_->setPointCallback([this](double x, double y) {
-            targetX_->setValue(x);
-            targetY_->setValue(y);
+            setTarget(x, y, targetZ_);
             topdown_->setMarker(x, y);
         });
 
@@ -175,9 +228,10 @@ public:
             gmod = detectGmodDirectory();
 
         if (gmod.isEmpty()) {
-            bridgeLabel_->setText("Первичная настройка: укажи папку garrysmod.");
+            bridgeLabel_->setText(
+                "GMod не найден · укажи папку через меню «Настройки».");
             statusBar()->showMessage(
-                "Сначала запусти Garry's Mod, затем настрой путь к папке garrysmod.");
+                "Выбери папку Garry's Mod в меню «Настройки».");
         } else {
             configureGameDirectory(gmod, false);
         }
@@ -213,13 +267,13 @@ public:
 
         const auto polygons = bsp_.facePolygons(false);
         view3d_->setMap(bsp_.vertices(), polygons);
+        view3d_->clearTarget();
         topdown_->setPolygons(polygons);
-        mapLabel_->setText(QString("%1\n%2 faces · %3 vertices · %4 displacement surfaces")
-            .arg(QFileInfo(path).fileName())
-            .arg(bsp_.faces().size())
-            .arg(bsp_.vertices().size())
-            .arg(bsp_.displacementCount()));
-        statusBar()->showMessage("Карта загружена: " + path);
+        targetSelected_ = false;
+        lastAimSet_ = false;
+        targetLabel_->setText("Цель не выбрана.\nКликни по поверхности в 3D-карте.");
+        mapLabel_->setText(QFileInfo(path).fileName());
+        statusBar()->showMessage("Карта загружена. Выбери точку кликом по 3D-карте.");
     }
 
 protected:
@@ -275,10 +329,7 @@ private:
             QFile file(config.path);
             if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
                 const QByteArray defaults =
-                    "# TFC developer-only ballistics settings. Restart TFC after editing.\n"
-                    "[ballistics]\n"
-                    "projectile_speed=4000\n"
-                    "gravity=600\n\n"
+                    "# TFC developer-only bridge settings. Restart TFC after editing.\n"
                     "[aim]\n"
                     "tolerance_deg=1.5\n"
                     "step_deg_per_tick=2.0\n\n"
@@ -289,10 +340,6 @@ private:
         }
 
         QSettings cfg(config.path, QSettings::IniFormat);
-        config.projectileSpeed = qBound(
-            1.0, cfg.value("ballistics/projectile_speed", 4000.0).toDouble(), 30000.0);
-        config.gravity = qBound(
-            1.0, cfg.value("ballistics/gravity", 600.0).toDouble(), 3000.0);
         config.aimToleranceDeg = qBound(
             0.1, cfg.value("aim/tolerance_deg", 1.5).toDouble(), 10.0);
         config.aimStepDegPerTick = qBound(
@@ -302,26 +349,6 @@ private:
         if (config.muzzleAttachment.isEmpty())
             config.muzzleAttachment = "auto";
         return config;
-    }
-
-    static QDoubleSpinBox *makeSpin(
-        QWidget *parent, double minimum, double maximum, double value)
-    {
-        auto *spin = new QDoubleSpinBox(parent);
-        spin->setRange(minimum, maximum);
-        spin->setDecimals(2);
-        spin->setSingleStep(16.0);
-        spin->setValue(value);
-        return spin;
-    }
-
-    static void addField(
-        QVBoxLayout *layout, const QString &label, QDoubleSpinBox *spin)
-    {
-        auto *row = new QHBoxLayout();
-        row->addWidget(new QLabel(label));
-        row->addWidget(spin, 1);
-        layout->addLayout(row);
     }
 
     QString detectGmodDirectory() const
@@ -394,31 +421,46 @@ private:
 
         bool needsWrite = true;
         QFile existing(addonPath);
-        if (existing.open(QIODevice::ReadOnly) && existing.readAll() == addonBytes)
-            needsWrite = false;
+        if (existing.open(QIODevice::ReadOnly)) {
+            needsWrite = existing.readAll() != addonBytes;
+            existing.close();
+        }
 
         if (needsWrite) {
-            if (!QDir().mkpath(QFileInfo(addonPath).absolutePath())) {
-                bridgeLabel_->setText("Не удалось создать каталог аддона.");
-                return;
-            }
-            QSaveFile target(addonPath);
-            if (!target.open(QIODevice::WriteOnly) ||
-                target.write(addonBytes) != addonBytes.size() ||
-                !target.commit()) {
-                bridgeLabel_->setText(
-                    "Не удалось установить Lua bridge: " + target.errorString());
-                return;
+            QString installError;
+            if (!installBridgeFile(path, &installError)) {
+                const QMessageBox::StandardButton answer = QMessageBox::question(
+                    this, "Нет доступа к папке игры",
+                    QString("Не удалось установить Lua bridge:\n%1\n\n"
+                            "Повторить установку с запросом прав администратора Windows?")
+                        .arg(installError),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::Yes);
+                if (answer != QMessageBox::Yes ||
+                    !installBridgeElevated(path, &installError)) {
+                    bridgeLabel_->setText("Lua bridge не установлен: " + installError);
+                    QMessageBox::warning(
+                        this, "Lua bridge не установлен", installError);
+                    return;
+                }
             }
         }
 
         QSettings settings("TFC", "TacticalFireControl");
-        settings.setValue("garrysmodDirectory", path);
         bridge_.setDeveloperOptions(
             developerConfig_.muzzleAttachment,
             developerConfig_.aimToleranceDeg,
             developerConfig_.aimStepDegPerTick);
         bridge_.setGmodDirectory(path);
+        if (!bridge_.configured() || !bridge_.lastError().isEmpty()) {
+            const QString error = bridge_.lastError().isEmpty()
+                ? "Не удалось подключить каталог Garry's Mod DATA."
+                : bridge_.lastError();
+            bridgeLabel_->setText("Lua bridge не подключён: " + error);
+            QMessageBox::warning(this, "Lua bridge не подключён", error);
+            return;
+        }
+        settings.setValue("garrysmodDirectory", path);
 
         bridgeLabel_->setText(
             "Аддон TFC установлен. Ожидаем Garry's Mod и Lua-телеметрию…");
@@ -446,39 +488,27 @@ private:
         if (!bridge_.connected()) {
             bridgeLabel_->setText(
                 "Нет телеметрии. Запусти Garry's Mod — Lua bridge подключится сам.");
-            telemetryLabel_->setText("Ожидание state.json…");
             fireButton_->setEnabled(false);
             return;
         }
 
         const QJsonObject s = bridge_.state();
-        bridgeLabel_->setText("Lua bridge: CONNECTED · protocol 1");
-        const QString vehicleClass = s.value("vehicle_class").toString("нет LVS-машины");
-        const QJsonObject muzzleAngle = s.value("muzzle_angle").toObject();
-        telemetryLabel_->setText(QString(
-            "Машина: %1\nLVS-сиденье: %2\nAttachment ствола: %3\n"
-            "Фактический угол ствола: yaw %4° / pitch %5°\n"
-            "Орудие в допуске: %6\nОрудие готово: %7\n"
-            "Боезапас / перегрев: %8 / %9")
-            .arg(vehicleClass)
-            .arg(s.value("in_vehicle").toBool() ? "да" : "нет")
-            .arg(s.value("muzzle_attachment").toString("не найден"))
-            .arg(muzzleAngle.value("yaw").toDouble(), 0, 'f', 2)
-            .arg(muzzleAngle.value("pitch").toDouble(), 0, 'f', 2)
-            .arg(s.value("aim_aligned").toBool() ? "да" : "нет")
-            .arg(s.value("gunner_ready").toBool() ? "да" : "нет")
-            .arg(s.value("ammo_clip").toInt())
-            .arg(s.value("overheated").toBool() ? "перегрев" : "норма"));
-
-        // Keep the user's ballistic profile editable; live bridge values are telemetry,
-        // not an instruction to overwrite custom speed/gravity settings every poll.
-        fireButton_->setEnabled(s.value("fire_ready").toBool());
+        bridgeLabel_->setText(
+            s.value("in_vehicle").toBool() && s.value("is_lvs").toBool()
+                ? "Lua bridge подключён · LVS"
+                : "Lua bridge подключён · займи место в LVS");
+        fireButton_->setEnabled(
+            lastAimSet_ && s.value("fire_ready").toBool());
     }
 
     void aim()
     {
         if (!bsp_.isLoaded()) {
             setStatus("F7: сначала загрузи карту BSP.");
+            return;
+        }
+        if (!targetSelected_) {
+            setStatus("F7: сначала выбери точку кликом по 3D-карте.");
             return;
         }
         if (!bridge_.connected()) {
@@ -492,44 +522,44 @@ private:
             return;
         }
         if (!s.value("muzzle_valid").toBool()) {
-            setStatus("F7: attachment ствола не найден. Нужна настройка профиля BM-30.");
+            setStatus("F7: не найден muzzle attachment в Garry's Mod.");
             return;
         }
 
         const QJsonObject muzzle = s.value("muzzle").toObject();
-        const tfc::Vec3 origin{
-            muzzle.value("x").toDouble(),
-            muzzle.value("y").toDouble(),
-            muzzle.value("z").toDouble()
-        };
-        const tfc::Vec3 target{
-            targetX_->value(), targetY_->value(), targetZ_->value()
-        };
-
-        const auto solution = tfc::solveLowArc(
-            origin, target, developerConfig_.projectileSpeed, developerConfig_.gravity);
-        if (!solution) {
-            setStatus("F7: для выбранной точки нет низкой баллистической траектории.");
+        const double dx = targetX_ - muzzle.value("x").toDouble();
+        const double dy = targetY_ - muzzle.value("y").toDouble();
+        const double dz = targetZ_ - muzzle.value("z").toDouble();
+        const double horizontalDistance = std::hypot(dx, dy);
+        if (horizontalDistance < 1e-6 && std::abs(dz) < 1e-6) {
+            setStatus("F7: цель совпадает с положением ствола.");
             return;
         }
+        constexpr double degreesPerRadian = 180.0 / std::numbers::pi;
+        const double worldYaw = std::atan2(dy, dx) * degreesPerRadian;
+        const double viewPitch =
+            -std::atan2(dz, horizontalDistance) * degreesPerRadian;
 
-        if (!bridge_.sendAim(
-                solution->worldYawDeg, solution->viewPitchDeg)) {
+        if (!bridge_.sendAim(worldYaw, viewPitch)) {
             setStatus("F7: не удалось записать команду Lua bridge: " + bridge_.lastError());
             return;
         }
 
-        lastAimYaw_ = solution->worldYawDeg;
-        lastAimPitch_ = solution->viewPitchDeg;
+        lastAimYaw_ = worldYaw;
+        lastAimPitch_ = viewPitch;
+        lastAimSet_ = true;
         setStatus(QString(
-            "F7: команда наведения отправлена · yaw %1° · pitch %2° · полёт %3 с")
-            .arg(solution->worldYawDeg, 0, 'f', 2)
-            .arg(solution->viewPitchDeg, 0, 'f', 2)
-            .arg(solution->flightTimeSec, 0, 'f', 2));
+            "F7: наведение на точку · yaw %1° · pitch %2°")
+            .arg(worldYaw, 0, 'f', 2)
+            .arg(viewPitch, 0, 'f', 2));
     }
 
     void fire()
     {
+        if (!lastAimSet_) {
+            setStatus("F8 заблокирована: сначала выбери цель и выполни наведение F7.");
+            return;
+        }
         if (!bridge_.connected()) {
             setStatus("F8: Lua bridge не подключён.");
             return;
@@ -546,6 +576,21 @@ private:
         setStatus("F8: одиночная команда ATTACK передана Lua bridge.");
     }
 
+    void setTarget(double x, double y, double z)
+    {
+        targetX_ = x;
+        targetY_ = y;
+        targetZ_ = z;
+        targetSelected_ = true;
+        lastAimSet_ = false;
+        fireButton_->setEnabled(false);
+        view3d_->setTarget(x, y, z);
+        targetLabel_->setText(QString("Цель · X %1 · Y %2 · Z %3")
+            .arg(x, 0, 'f', 1)
+            .arg(y, 0, 'f', 1)
+            .arg(z, 0, 'f', 1));
+    }
+
     void setStatus(const QString &message)
     {
         statusBar()->showMessage(message, 8000);
@@ -555,18 +600,20 @@ private:
     bspvision::Bsp3DView *view3d_ = nullptr;
     TopDownPicker *topdown_ = nullptr;
     QLabel *mapLabel_ = nullptr;
+    QLabel *targetLabel_ = nullptr;
     QLabel *bridgeLabel_ = nullptr;
-    QLabel *telemetryLabel_ = nullptr;
-    QDoubleSpinBox *targetX_ = nullptr;
-    QDoubleSpinBox *targetY_ = nullptr;
-    QDoubleSpinBox *targetZ_ = nullptr;
     DeveloperConfig developerConfig_;
     QPushButton *aimButton_ = nullptr;
     QPushButton *fireButton_ = nullptr;
     bspvision::BspFile bsp_;
     FileBridge bridge_;
+    double targetX_ = 0.0;
+    double targetY_ = 0.0;
+    double targetZ_ = 0.0;
     double lastAimYaw_ = 0.0;
     double lastAimPitch_ = 0.0;
+    bool targetSelected_ = false;
+    bool lastAimSet_ = false;
     bool hotkeyF7Registered_ = false;
     bool hotkeyF8Registered_ = false;
 };
@@ -577,12 +624,33 @@ int main(int argc, char **argv)
     QApplication::setApplicationName("TFC");
     QApplication::setOrganizationName("TFC");
 
+    const QStringList args = QApplication::arguments();
+    if (args.size() == 3 && args.at(1) == "--install-bridge") {
+        QString error;
+        if (!installBridgeFile(args.at(2), &error)) {
+            QMessageBox::critical(
+                nullptr, "Не удалось установить Lua bridge", error);
+            return 1;
+        }
+        return 0;
+    }
+
     MainWindow window;
     window.show();
 
-    const QStringList args = QApplication::arguments();
-    if (args.size() > 1)
+    if (args.size() > 1) {
         window.loadBsp(args.at(1));
+    } else {
+        QTimer::singleShot(0, &window, [&window] {
+            QMessageBox::information(
+                &window, "TFC — краткая инструкция",
+                "Перетащи .bsp на окно или выбери файл кнопкой «Открыть BSP».\n"
+                "Кликни по поверхности карты в 3D, чтобы выбрать цель.\n"
+                "В Garry's Mod займи место наводчика LVS; F7 наведёт на точку, "
+                "F8 отправит одиночную команду ATTACK.\n"
+                "Окно карты остаётся поверх игры.");
+        });
+    }
 
     return app.exec();
 }

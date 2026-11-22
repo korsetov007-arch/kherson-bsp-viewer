@@ -4,24 +4,20 @@ Lightweight Windows x64 C++20 / Qt 6 Source BSP viewer and Garry's Mod front end
 
 ## Prototype
 - Single desktop executable: `tfc.exe`.
-- Drop a Source BSP v20 file onto the app, or pass it as argv[1].
-- Reuses the earlier BSP v20 parser and 3D view.
-- Top-down tab selects X/Y; set Z manually because maps can have multiple floors.
-- F7 computes a low ideal ballistic arc and sends a view-angle request.
+- Drop a Source BSP v20 file onto `tfc.exe`, or pass it as argv[1]. Opening it without a map shows brief usage instructions.
+- The map window stays above Garry's Mod so it remains visible while the game is focused.
+- Click a visible surface in the 3D BSP view to select its world-space X/Y/Z point. The top-down tab remains available for X/Y selection.
+- F7 aims directly from the live muzzle position at the selected point; no unverified rocket speed or ballistic arc is assumed.
 - F8 requests one standard LVS ATTACK pulse, gated by the actual muzzle angle and gunner readiness.
 - The Lua addon installs once. Start Garry's Mod first, then TFC in ordinary use.
 
-## Developer ballistics config
+## Developer bridge config
 
 The first launch creates `tfc.cfg` beside `tfc.exe`. The file is intentionally outside the main UI. Edit it and restart TFC to apply changes.
 
-Default profile:
+Default settings:
 
 ```ini
-[ballistics]
-projectile_speed=4000
-gravity=600
-
 [aim]
 tolerance_deg=1.5
 step_deg_per_tick=2.0
@@ -30,13 +26,11 @@ step_deg_per_tick=2.0
 muzzle_attachment=auto
 ```
 
-- `projectile_speed`: projectile speed in Source units per second (default 4000).
-- `gravity`: gravity magnitude used by the ballistic solver (default 600).
 - `tolerance_deg`: maximum actual muzzle-angle error accepted for fire readiness.
 - `step_deg_per_tick`: view-angle approach increment per CreateMove frame.
-- `muzzle_attachment=auto`: use the LVS vehicle's `TurretBallisticsMuzzleAttachment` property, then fall back to `muzzle`. Set an exact attachment name only for a vehicle that needs it.
+- `muzzle_attachment=auto`: use the LVS vehicle's `TurretBallisticsMuzzleAttachment` property, then try common names such as `muzzle` and `muzzle_1…muzzle_12`. Set an exact attachment name only for a vehicle that needs it.
 
-The addon reports `GetAttachment(...).Ang` from the actual in-game muzzle attachment. That world yaw/pitch, not the player's camera angle, is used to confirm that the barrel has reached the requested direction. The muzzle position from the same attachment is the ballistic launch origin.
+The addon reports the player's position and view angles, vehicle transform, and `GetAttachment(...).Pos/Ang` from the live in-game muzzle. The actual muzzle angle, not just the camera angle, confirms that the barrel has reached the requested direction. In automatic mode, the bridge tries common muzzle names including `muzzle_1` through `muzzle_12`.
 
 ## Bridge
 
@@ -46,7 +40,7 @@ The bridge uses Garry's Mod's built-in DATA filesystem; no open network port, DL
 
 1. Build and run `tfc.exe`.
 2. If Steam discovery misses the game, choose the `garrysmod` folder containing `addons`.
-3. TFC installs `addons/tfc_bridge/lua/autorun/client/tfc_bridge.lua` automatically.
+3. TFC installs `addons/tfc_bridge/lua/autorun/client/tfc_bridge.lua` automatically. If Windows blocks the write, it offers a one-time UAC elevation for this file copy only.
 4. If the game was already running during installation, restart it once.
 5. Later: start GMod, enter the LVS vehicle, then launch TFC and wait for CONNECTED.
 
@@ -59,11 +53,11 @@ Yes: the bridge can be published as a separate Workshop addon. Its folder is `ga
 Requirements: Visual Studio 2022 Desktop C++, CMake 3.24+, Qt 6.5+ MSVC x64.
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:/Qt/6.8.0/msvc2022_64"
-cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:/Qt/6.8.0/msvc2022_64"
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
 ## Known limitations
 
-BSP v20 only; no full Source renderer or exact collision. Z selection is manual. Ballistics assume constant gravity and projectile speed, without drag, terrain collision or weapon-specific simulation. 4000 units/s is still an unverified estimate. The exact BM-30 addon must be tested for muzzle attachment, turret response and attack action. The bridge confirms a sent pulse, not an actual projectile launch. No build or live game test is claimed yet.
+BSP v20 only; the viewer renders BSP geometry without textures or a full Source renderer. Target picking intersects the visible BSP mesh and is not an in-game collision trace. The bridge changes view angles through Garry's Mod's `CreateMove` hook and does not inject DLLs or use an external network connection. Weapon behavior and muzzle layout vary between addons; test F7/F8 in the actual BM-30 setup. The bridge can confirm its command and readiness checks, not that a projectile launched or hit. No live game test is claimed.

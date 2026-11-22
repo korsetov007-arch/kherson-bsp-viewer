@@ -87,23 +87,34 @@ local function getMuzzle(base, host)
     if not IsValid(base) then return nil, nil, nil end
 
     local configured = istable(host) and host.muzzle_attachment or "auto"
-    local attachmentName = configured
-    if not isstring(attachmentName) or attachmentName == "" or attachmentName == "auto" then
-        attachmentName = base.TurretBallisticsMuzzleAttachment or "muzzle"
+    local attachmentNames = {}
+    if isstring(configured) and configured ~= "" and configured ~= "auto" then
+        attachmentNames[1] = configured
+    else
+        local preferred = base.TurretBallisticsMuzzleAttachment
+        if isstring(preferred) and preferred ~= "" then
+            attachmentNames[#attachmentNames + 1] = preferred
+        end
+        attachmentNames[#attachmentNames + 1] = "muzzle"
+        attachmentNames[#attachmentNames + 1] = "muzzle_2"
+        attachmentNames[#attachmentNames + 1] = "muzzle_1"
+        for i = 3, 12 do
+            attachmentNames[#attachmentNames + 1] = "muzzle_" .. i
+        end
     end
 
-    local ok, index = pcall(base.LookupAttachment, base, attachmentName)
-    if not ok or not isnumber(index) or index <= 0 then
-        return nil, nil, attachmentName
+    for _, attachmentName in ipairs(attachmentNames) do
+        local ok, index = pcall(base.LookupAttachment, base, attachmentName)
+        if ok and isnumber(index) and index > 0 then
+            local got, attachment = pcall(base.GetAttachment, base, index)
+            if got and istable(attachment) and
+               isvector(attachment.Pos) and isangle(attachment.Ang) then
+                return attachment.Pos, attachment.Ang, attachmentName
+            end
+        end
     end
 
-    local got, attachment = pcall(base.GetAttachment, base, index)
-    if not got or not istable(attachment) or
-       not isvector(attachment.Pos) or not isangle(attachment.Ang) then
-        return nil, nil, attachmentName
-    end
-
-    return attachment.Pos, attachment.Ang, attachmentName
+    return nil, nil, attachmentNames[1]
 end
 
 local function weaponReadiness(seat, ply)
@@ -164,6 +175,9 @@ local function writeState(host)
 
     local eye = IsValid(ply) and ply:EyeAngles() or angle_zero
     local eyePosition = IsValid(ply) and ply:EyePos() or vector_origin
+    local playerPosition = IsValid(ply) and ply:GetPos() or vector_origin
+    local vehiclePosition = inVehicle and base:GetPos() or vector_origin
+    local vehicleAngles = inVehicle and base:GetAngles() or angle_zero
     local hasGunner, gunnerReady, clip, ammo, overheated =
         weaponReadiness(seat, ply)
     local aimAligned = inVehicle and isMuzzleAligned(base, host) or false
@@ -179,7 +193,17 @@ local function writeState(host)
         seat_index = IsValid(seat) and isfunction(seat.lvsGetPodIndex)
             and seat:lvsGetPodIndex() or -1,
         eye = { x = eye.p, y = eye.y, z = eye.r },
+        eye_angles = { pitch = eye.p, yaw = eye.y, roll = eye.r },
         eye_position = { x = eyePosition.x, y = eyePosition.y, z = eyePosition.z },
+        player_position = {
+            x = playerPosition.x, y = playerPosition.y, z = playerPosition.z
+        },
+        vehicle_position = {
+            x = vehiclePosition.x, y = vehiclePosition.y, z = vehiclePosition.z
+        },
+        vehicle_angles = {
+            pitch = vehicleAngles.p, yaw = vehicleAngles.y, roll = vehicleAngles.r
+        },
         muzzle_valid = isvector(muzzlePosition) and isangle(muzzleAngle),
         muzzle_attachment = attachmentName or "",
         muzzle = isvector(muzzlePosition) and {
@@ -190,7 +214,6 @@ local function writeState(host)
         } or {},
         turret_yaw = inVehicle and safeNumber(base, "GetTurretYaw", 0) or 0,
         turret_pitch = inVehicle and safeNumber(base, "GetTurretPitch", 0) or 0,
-        projectile_speed = 4000,
         gravity = readGravity(),
         gunner_present = hasGunner,
         gunner_ready = gunnerReady,
