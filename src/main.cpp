@@ -371,6 +371,9 @@ public:
 
     void loadBsp(const QString &path)
     {
+        if (bridge_.configured() && bridge_.connected())
+            bridge_.sendCancel();
+
         QString error;
         if (!bsp_.load(path, &error)) {
             QMessageBox::warning(this, "TFC — BSP", error);
@@ -799,9 +802,12 @@ private:
                                state.value("is_lvs").toBool();
         const bool currentLvsMode = state.value("turret_ballistics_active").toBool();
         if (lastAimSet_ && currentLvsMode != lastAimLvsCompensated_) {
+            // Invalidate the desktop solution and stop the old Lua controller too.
+            if (bridge_.connected())
+                bridge_.sendCancel();
             lastAimSet_ = false;
             fireButton_->setEnabled(false);
-            setStatus("Режим баллистики LVS изменился. Повтори F7 для нового режима.");
+            setStatus("Режим баллистики LVS изменился: старая доводка отменена. Повтори F7.");
         }
         const QJsonObject player = state.value("player_position").toObject();
         const QJsonObject vehicle = state.value("vehicle_position").toObject();
@@ -839,9 +845,16 @@ private:
         }
 
         if (state.contains("eye_angles")) {
+            const QJsonObject camera = state.value("camera_angles").toObject();
+            const double cameraYaw = camera.value("yaw").toDouble(aimYaw);
+            const double cameraPitch = camera.value("pitch").toDouble(aimPitch);
+            const double cameraError = state.value("camera_aim_error_deg").toDouble(0.0);
             orientationLabel_->setText(QString(
-                "EYE %1° / %2°\nLVS AIM %3° / %4°\nTURRET %5° / %6°\nBC %7 · ZOOM %8 · 3P %9")
+                "EYE %1° / %2°\nCAM %3° / %4°  Δ %5°\nLVS AIM %6° / %7°\n"
+                "TURRET %8° / %9°\nBC %10 · ZOOM %11 · 3P %12")
                 .arg(eyeYaw, 0, 'f', 1).arg(eyePitch, 0, 'f', 1)
+                .arg(cameraYaw, 0, 'f', 1).arg(cameraPitch, 0, 'f', 1)
+                .arg(cameraError, 0, 'f', 2)
                 .arg(aimYaw, 0, 'f', 1).arg(aimPitch, 0, 'f', 1)
                 .arg(state.value("turret_yaw").toDouble(), 0, 'f', 1)
                 .arg(state.value("turret_pitch").toDouble(), 0, 'f', 1)
@@ -886,9 +899,14 @@ private:
                 : (!lastAimSet_ ? "СНАЧАЛА F7 — РАСЧИТАТЬ НАВЕДЕНИЕ" :
                    (state.value("aim_aligned").toBool()
                     ? "СТВОЛ В ДОПУСКЕ" : "ОЖИДАНИЕ СОВМЕЩЕНИЯ СТВОЛА")))));
-        weaponLabel_->setText(QString("%1\n%2  ·  %3\n%4")
+        const QString fireBlock = state.value("fire_block_reason").toString();
+        const QString commandText = state.value("command_message").toString();
+        weaponLabel_->setText(QString("%1\n%2  ·  %3\nFIRE: %4\n%5")
             .arg(readiness).arg(ammoText).arg(clipText)
-            .arg(state.value("server_fire_message").toString()));
+            .arg(fireBlock.isEmpty() ? "нет данных" : fireBlock)
+            .arg(commandText.isEmpty()
+                ? state.value("server_fire_message").toString()
+                : commandText));
         updateTrajectory(state);
     }
 
@@ -967,9 +985,12 @@ private:
             setStatus("F8: Lua bridge не подключён.");
             return;
         }
-        if (!bridge_.state().value("fire_ready").toBool()) {
-            setStatus(
-                "F8 заблокирована: LVS ещё не подтвердил наведение и готовность орудия.");
+        const QJsonObject fireState = bridge_.state();
+        if (!fireState.value("fire_ready").toBool()) {
+            const QString reason = fireState.value("fire_block_reason").toString();
+            setStatus("F8 заблокирована: " +
+                (reason.isEmpty() ? QString("LVS ещё не подтвердил готовность орудия.")
+                                  : reason));
             return;
         }
         if (!bridge_.sendFire(
@@ -983,6 +1004,10 @@ private:
 
     void setTarget(double x, double y, double z)
     {
+        // Never let a previous target keep steering while a new one is selected.
+        if (bridge_.configured() && bridge_.connected())
+            bridge_.sendCancel();
+
         targetX_ = x;
         targetY_ = y;
         targetZ_ = z;
