@@ -192,6 +192,8 @@ public:
             QPushButton:disabled { color:#6d7168; background:#171b14; border-color:#252a20; }
             QPushButton#openButton { background:#3a462a; border-color:#4b5935; font-weight:600; }
             QPushButton#aimButton { background:#354028; border-color:#637448; padding:11px 14px; font-weight:700; }
+            QPushButton#unlockButton { background:#1b2117; border:1px solid #4a5438; color:#c1c9ad; font-size:21px; font-weight:500; padding:2px; }
+            QPushButton#unlockButton:hover { background:#343d28; border-color:#78885a; color:#f0f2e9; }
             QPushButton#fireButton { background:#583a24; border-color:#8b6036; padding:11px 14px; font-weight:700; }
             QPushButton#fireButton:hover { background:#70482a; border-color:#b47a43; }
             QPushButton#fireButton:disabled { background:#1b1a16; border-color:#393328; color:#777064; }
@@ -290,11 +292,19 @@ public:
 
         aimButton_ = new QPushButton("F7  /  НАВЕСТИСЬ", side);
         aimButton_->setObjectName("aimButton");
+        unlockButton_ = new QPushButton("×", side);
+        unlockButton_->setObjectName("unlockButton");
+        unlockButton_->setFixedSize(42, 42);
+        unlockButton_->setToolTip("Отключить автодоводку и вернуть ручное управление камерой");
         fireButton_ = new QPushButton("F8  /  ОДИНОЧНЫЙ ВЫСТРЕЛ", side);
         fireButton_->setObjectName("fireButton");
         fireButton_->setEnabled(false);
         right->addSpacing(4);
-        right->addWidget(aimButton_);
+        auto *aimRow = new QHBoxLayout();
+        aimRow->setSpacing(6);
+        aimRow->addWidget(aimButton_, 1);
+        aimRow->addWidget(unlockButton_, 0);
+        right->addLayout(aimRow);
         right->addWidget(fireButton_);
         auto *footnote = new QLabel(
             "ЯНТАРНАЯ ЛИНИЯ — расчётная траектория\n"
@@ -311,6 +321,7 @@ public:
 
         connect(openButton, &QPushButton::clicked, this, [this] { chooseBsp(); });
         connect(aimButton_, &QPushButton::clicked, this, [this] { aim(); });
+        connect(unlockButton_, &QPushButton::clicked, this, [this] { releaseAim(); });
         connect(fireButton_, &QPushButton::clicked, this, [this] { fire(); });
 
         view3d_->setTargetCallback([this](double x, double y, double z) {
@@ -934,6 +945,18 @@ private:
             .arg(plan->muzzlePitchDeg, 0, 'f', 1));
     }
 
+    void releaseAim()
+    {
+        // The bridge's cancel command clears aimCommand and lastAim in Lua.
+        // Once CreateMove sees that command, the game camera is fully manual again.
+        if (bridge_.configured() && bridge_.connected())
+            bridge_.sendCancel();
+
+        lastAimSet_ = false;
+        fireButton_->setEnabled(false);
+        setStatus("× Автодоводка отключена — ручное управление камерой возвращено.");
+    }
+
     void fire()
     {
         if (!lastAimSet_) {
@@ -993,6 +1016,7 @@ private:
     QLabel *trajectoryLabel_ = nullptr;
     DeveloperConfig developerConfig_;
     QPushButton *aimButton_ = nullptr;
+    QPushButton *unlockButton_ = nullptr;
     QPushButton *fireButton_ = nullptr;
     bspvision::BspFile bsp_;
     FileBridge bridge_;

@@ -9,6 +9,7 @@ Windows x64 C++20 / Qt 6 Source BSP viewer and Garry's Mod/LVS fire-control fron
 - When GMod is connected, TFC reads live player and vehicle coordinates, view yaw/pitch, the selected LVS weapon, muzzle attachment position/angle, turret state and game gravity.
 - A live platform marker and view-direction arrow are drawn on both map views.
 - F7 computes a firing direction. If the current LVS vehicle is running its own ballistic compensation, TFC sends a line-of-sight command and predicts the compensated muzzle direction. Otherwise it computes an external low ballistic arc.
+- The small × button next to F7 cancels automatic view steering, clears the cached aim solution and returns full manual camera control. F8 is disabled until a fresh F7 solution is generated.
 - An amber trajectory preview is drawn on the 3D map and top-down map.
 - F8 requests one server-side LVS `ATTACK` pulse. The server hook returns `true` for exactly one `LVS.PlayerKeyDown("ATTACK")` read.
 
