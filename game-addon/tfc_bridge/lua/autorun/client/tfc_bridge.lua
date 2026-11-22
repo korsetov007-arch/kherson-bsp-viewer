@@ -428,6 +428,36 @@ local function processCommand()
     return host
 end
 
+-- Tank LVS first-person passenger cameras keep EyeAngles in seat-local space.
+-- CalcViewPassenger converts them back with pod:LocalToWorldAngles(). The TFC
+-- target is calculated in world space, so convert it into that local frame here.
+-- Recalculate every tick so a moving/rotating platform keeps the same world target.
+local function getCommandViewAngles(base, seat, worldYaw, worldPitch)
+    local target = Angle(worldPitch, worldYaw, 0)
+
+    if not IsValid(base) or not IsValid(seat) or
+       not isfunction(base.CalcTankView) then
+        return target
+    end
+
+    local thirdPerson = isfunction(seat.GetThirdPersonMode)
+        and seat:GetThirdPersonMode() or false
+    local aimUnlocked = isfunction(seat.IsAimVectorUnlocked)
+        and seat:IsAimVectorUnlocked() or false
+
+    -- TankViewPassenger only transforms the first-person, aim-locked camera.
+    if thirdPerson or aimUnlocked then
+        return target
+    end
+
+    local ok, localTarget = pcall(seat.WorldToLocalAngles, seat, target)
+    if ok and isangle(localTarget) then
+        return localTarget
+    end
+
+    return target
+end
+
 hook.Add("CreateMove", "TFC_Bridge_CreateMove", function(cmd)
     if aimCommand then
         if CurTime() > aimExpires then
@@ -436,13 +466,15 @@ hook.Add("CreateMove", "TFC_Bridge_CreateMove", function(cmd)
             commandMessage = "Aim timed out"
         else
             local current = cmd:GetViewAngles()
+            local base, seat = getLVSContext()
+            local targetView = getCommandViewAngles(
+                base, seat, aimCommand.yaw, aimCommand.pitch)
             cmd:SetViewAngles(Angle(
-                math.ApproachAngle(current.p, aimCommand.pitch, aimCommand.step),
-                math.ApproachAngle(current.y, aimCommand.yaw, aimCommand.step),
+                math.ApproachAngle(current.p, targetView.p, aimCommand.step),
+                math.ApproachAngle(current.y, targetView.y, aimCommand.step),
                 0
             ))
 
-            local base = getLVSContext()
             local host = readJson(HOST_FILE)
             local aligned = isMuzzleAligned(base, host)
             if aligned then
