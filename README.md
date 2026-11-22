@@ -9,7 +9,7 @@ Windows x64 C++20 / Qt 6 Source BSP viewer and Garry's Mod/LVS fire-control fron
 - When GMod is connected, TFC reads live player and vehicle coordinates, view yaw/pitch, the selected LVS weapon, muzzle attachment position/angle, turret state and game gravity.
 - A live platform marker and view-direction arrow are drawn on both map views.
 - F7 computes a firing direction. If the current LVS vehicle is running its own ballistic compensation, TFC sends a line-of-sight command and predicts the compensated muzzle direction. Otherwise it computes an external low ballistic arc.
-- The small × button next to F7 cancels automatic view steering, clears the cached aim solution and returns full manual camera control. F8 is disabled until a fresh F7 solution is generated.
+- The small × button next to F7 cancels automatic view steering, clears the cached aim solution and returns full manual camera control. While alignment is in progress, TFC refreshes the aim angles from the newest sight/muzzle positions so the preview and controller use the same live geometry. F8 stays gated by weapon readiness and measured muzzle alignment; the UI reports the exact blocking reason.
 - An amber trajectory preview is drawn on the 3D map and top-down map.
 - F8 requests one server-side LVS `ATTACK` pulse. The server hook returns `true` for exactly one `LVS.PlayerKeyDown("ATTACK")` read.
 
@@ -82,4 +82,5 @@ Requirements: Visual Studio 2022 Desktop C++, CMake 3.24+, Qt 6.5+ MSVC x64.
 - Target picking intersects the BSP display mesh, not an in-game physics trace. Z/floor selection must be accurate.
 - Ballistic preview is an idealized approximation. It is not a complete LVS rocket or BM-30 projectile simulation.
 - The actual muzzle/sight attachment names and axes must be verified on the user's BM-30 addon.
+- The Lua bridge reports version `1.3`; the desktop connection badge shows the loaded version. Rebuild the Qt executable after bridge source changes so its embedded installer does not restore an older Lua copy.
 - Changes in this update have not been compiled with Qt/MSVC or tested in a live GMod session here. Confirm `[TFC] Server-side LVS fire relay ready` in the server console, then test F7 and one F8 pulse at a safe range before relying on it.
