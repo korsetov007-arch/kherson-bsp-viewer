@@ -641,9 +641,12 @@ private:
         const QJsonObject s = bridge_.state();
         const bool inVehicle = s.value("in_vehicle").toBool() &&
                                s.value("is_lvs").toBool();
+        const QString bridgeVersion = s.value("bridge_version").toString();
+        const QString versionSuffix = bridgeVersion.isEmpty()
+            ? QString() : QString("  ·  LUA %1").arg(bridgeVersion);
         bridgeLabel_->setText(inVehicle
-            ? "●  CONNECTED  /  LVS"
-            : "●  CONNECTED  /  ОЖИДАНИЕ LVS");
+            ? "●  CONNECTED  /  LVS" + versionSuffix
+            : "●  CONNECTED  /  ОЖИДАНИЕ LVS" + versionSuffix);
         bridgeLabel_->setStyleSheet(inVehicle
             ? "color:#a4b578;font-size:11px;font-weight:700;padding:6px 10px;border:1px solid #465438;background:#10150d;"
             : "color:#c2a06e;font-size:11px;font-weight:700;padding:6px 10px;border:1px solid #59462d;background:#151109;");
