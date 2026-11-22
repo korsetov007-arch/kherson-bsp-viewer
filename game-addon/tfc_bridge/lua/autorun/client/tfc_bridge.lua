@@ -1,4 +1,4 @@
--- TFC bridge v1.2
+-- TFC bridge v1.3
 -- Installed once at garrysmod/addons/tfc_bridge/lua/autorun/client/.
 -- Built-in DATA filesystem only. No socket library, HTTP, DLL or external module.
 -- Important: physical muzzle attachment Ang from the live game is the aim feedback source.
@@ -285,6 +285,7 @@ local function writeState(host)
 
     local state = {
         protocol = PROTOCOL,
+        bridge_version = "1.3",
         session = host.session,
         heartbeat = os.time(),
         map = game.GetMap(),
