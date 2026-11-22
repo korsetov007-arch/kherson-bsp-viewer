@@ -1,4 +1,4 @@
-# TFC bridge protocol v1.2
+# TFC bridge protocol v1.3
 
 ## File bridge
 
@@ -15,7 +15,10 @@ The desktop atomically replaces files using QSaveFile. Lua ignores stale session
 The client Lua script reports:
 
 - `player_position`, `eye_position`, `eye_angles`: player world coordinates and view angles.
-- `view_forward`, `player_aim_angles`: world view direction and aim vector angles.
+- `view_forward`, `player_aim_angles`: raw eye direction and LVS gunner aim-vector angles.
+- `camera_angles`, `camera_forward`, `camera_position`: final rendered LVS view after vehicle-seat camera transforms; `camera_aim_error_deg` compares rendered camera direction with the weapon aim vector.
+- `seat_angles`, `aim_vector_unlocked`, `lvs_mouse_aim`: camera-control mode diagnostics.
+- `bridge_version`: active client bridge version.
 - `view_origin`, `view_attachment`: LVS sight attachment world position when available (falls back to EyePos).
 - `vehicle_position`, `vehicle_angles`: LVS platform transform.
 - `muzzle`, `muzzle_angle`, `muzzle_attachment`: real world position and angle from the selected muzzle attachment.
@@ -23,7 +26,7 @@ The client Lua script reports:
 - `gravity`: current live GMod gravity magnitude.
 - `turret_ballistics_predicted`, `turret_ballistics_active`, `turret_ballistics_velocity`, `turret_optics_zoom_only`, `zoom_held`, `third_person_mode`, `turret_upright_z`: diagnostic inputs used to determine the active LVS compensation mode.
 - `gunner_present`, `gunner_ready`, `ammo_limited`, `ammo_clip`, `ammo_reserve`, `overheated`, `weapon_reason`: selected weapon status.
-- `muzzle_error_deg`, `aim_aligned`, `fire_ready`: physical muzzle-vector error and fire gate.
+- `muzzle_error_deg`, `aim_aligned`, `fire_ready`, `fire_block_reason`: physical muzzle-vector error and the exact fire gate reason.
 - `server_fire_ack`, `server_fire_message`: response from the server fire relay.
 
 State updates are normally written every 250 ms. TFC uses the platform position as the map marker while seated, and the player's live view direction as its heading arrow. The UI also displays both platform and player coordinates.
@@ -35,6 +38,8 @@ F7 derives the target direction from the selected BSP point and the actual muzzl
 Some LVS vehicles provide internal turret ballistics. Their mode may depend on the predictor setting, vehicle upright angle, third-person state, and zoom input. Applying a separate TFC elevation while LVS is already compensating would double-correct the shot.
 
 When `turret_ballistics_active` is true, TFC sends the line-of-sight view angle from `view_origin`, uses the vehicle's `TurretBallisticsProjectileVelocity` and live gravity, and estimates the desired world muzzle angle using LVS's compensation formula. When native LVS compensation is inactive, TFC instead solves the low-angle trajectory with the configured or inferred projectile speed and live/configured gravity. Actual muzzle orientation is verified by comparing world-forward vectors; it is not inferred from the player's camera alone.
+
+While the physical muzzle is still outside the alignment tolerance, the desktop refreshes the aim solution from the latest sight and muzzle attachment positions. This keeps the commanded world target current as the platform moves or rotates. An active command is cancelled when the target or LVS compensation mode changes.
 
 The amber trajectory is sampled in world coordinates and drawn over the 3D BSP and top-down views. It is only an approximation: it does not model every BM-30 addon behavior, drag, rocket thrust, fuses or collision. The fallback speed of 4000 Source units/s remains an estimate, not a verified BM-30 specification.
 
