@@ -199,6 +199,27 @@ local function writeState(host)
     local playerAim = aimForward:Angle()
     local eyePosition = IsValid(ply) and ply:EyePos() or vector_origin
     local playerPosition = IsValid(ply) and ply:GetPos() or vector_origin
+
+    -- LVS may transform the passenger camera separately from the player's raw
+    -- EyeAngles. Capture its final rendered view so diagnostics don't confuse
+    -- the gunner's aim vector with the actual camera orientation.
+    local cameraPosition = eyePosition
+    local cameraAngles = eye
+    if IsValid(ply) and isfunction(ply.lvsGetView) then
+        local viewOk, viewPos, viewAng = pcall(ply.lvsGetView, ply)
+        if viewOk then
+            if isvector(viewPos) then cameraPosition = viewPos end
+            if isangle(viewAng) then cameraAngles = viewAng end
+        end
+    end
+    local seatAngles = IsValid(seat) and seat:GetAngles() or angle_zero
+    local aimVectorUnlocked = IsValid(seat) and isfunction(seat.IsAimVectorUnlocked)
+        and seat:IsAimVectorUnlocked() or false
+    local mouseAim = IsValid(ply) and isfunction(ply.lvsMouseAim)
+        and ply:lvsMouseAim() or false
+    local cameraForward = cameraAngles:Forward()
+    local cameraAimCosine = math.Clamp(cameraForward:Dot(aimForward), -1, 1)
+    local cameraAimError = math.deg(math.acos(cameraAimCosine))
     local vehiclePosition = inVehicle and base:GetPos() or vector_origin
     local vehicleAngles = inVehicle and base:GetAngles() or angle_zero
 
@@ -244,6 +265,24 @@ local function writeState(host)
         muzzleError = errorDegrees
     end
 
+    local fireBlockReason = "Ready"
+    if not inVehicle then
+        fireBlockReason = "Not seated in an LVS vehicle"
+    elseif not hasGunner then
+        fireBlockReason = weaponReason or "Active LVS gunner weapon not found"
+    elseif not gunnerReady then
+        fireBlockReason = weaponReason or "LVS weapon is not ready"
+    elseif not isvector(muzzlePosition) or not isangle(muzzleAngle) then
+        fireBlockReason = "Muzzle attachment is missing"
+    elseif not lastAim then
+        fireBlockReason = "No active F7 solution"
+    elseif not aimAligned then
+        fireBlockReason = string.format(
+            "Muzzle misaligned: %.2f deg (limit %.2f deg)",
+            tonumber(muzzleError) or -1,
+            tonumber(lastAim.tolerance) or 1.5)
+    end
+
     local state = {
         protocol = PROTOCOL,
         session = host.session,
@@ -258,6 +297,21 @@ local function writeState(host)
         eye_angles = { pitch = eye.p, yaw = eye.y, roll = eye.r },
         view_forward = { x = eyeForward.x, y = eyeForward.y, z = eyeForward.z },
         player_aim_angles = { pitch = playerAim.p, yaw = playerAim.y, roll = playerAim.r },
+        camera_angles = {
+            pitch = cameraAngles.p, yaw = cameraAngles.y, roll = cameraAngles.r
+        },
+        camera_forward = {
+            x = cameraForward.x, y = cameraForward.y, z = cameraForward.z
+        },
+        camera_aim_error_deg = cameraAimError,
+        camera_position = {
+            x = cameraPosition.x, y = cameraPosition.y, z = cameraPosition.z
+        },
+        seat_angles = {
+            pitch = seatAngles.p, yaw = seatAngles.y, roll = seatAngles.r
+        },
+        aim_vector_unlocked = aimVectorUnlocked,
+        lvs_mouse_aim = mouseAim,
         eye_position = { x = eyePosition.x, y = eyePosition.y, z = eyePosition.z },
         view_origin = { x = viewOrigin.x, y = viewOrigin.y, z = viewOrigin.z },
         view_attachment = viewAttachment,
@@ -295,6 +349,7 @@ local function writeState(host)
         clip_relevant = clipRelevant,
         fire_ready = inVehicle and hasGunner and gunnerReady and isvector(muzzlePosition)
             and aimAligned and not overheated,
+        fire_block_reason = fireBlockReason,
         aim_aligned = aimAligned,
         muzzle_error_deg = muzzleError,
         ammo_clip = clip,
@@ -472,7 +527,7 @@ hook.Add("CreateMove", "TFC_Bridge_CreateMove", function(cmd)
             cmd:SetViewAngles(Angle(
                 math.ApproachAngle(current.p, targetView.p, aimCommand.step),
                 math.ApproachAngle(current.y, targetView.y, aimCommand.step),
-                0
+                math.ApproachAngle(current.r, targetView.r, aimCommand.step)
             ))
 
             local host = readJson(HOST_FILE)
