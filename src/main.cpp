@@ -6,6 +6,8 @@
 #include "topdown_picker.hpp"
 
 #include <QApplication>
+#include <QCoreApplication>
+#include <QByteArray>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
@@ -32,10 +34,20 @@
 #include <windows.h>
 #endif
 
+struct DeveloperConfig {
+    double projectileSpeed = 4000.0;
+    double gravity = 600.0;
+    double aimToleranceDeg = 1.5;
+    double aimStepDegPerTick = 2.0;
+    QString muzzleAttachment = QStringLiteral("auto");
+    QString path;
+};
+
 class MainWindow final : public QMainWindow {
 public:
     MainWindow()
     {
+        developerConfig_ = loadDeveloperConfig();
         setWindowTitle("TFC — Tactical Fire Control");
         resize(1120, 760);
         setAcceptDrops(true);
@@ -100,17 +112,16 @@ public:
         zHint->setStyleSheet("color:#a8b0bd;");
         right->addWidget(zHint);
 
-        right->addWidget(new QLabel("<b>Профиль баллистики</b>", side));
-        speed_ = makeSpin(side, 1.0, 30000.0, 4000.0);
-        gravity_ = makeSpin(side, 1.0, 3000.0, 600.0);
-        addField(right, "Скорость (ед/с)", speed_);
-        addField(right, "Гравитация", gravity_);
-
+        right->addWidget(new QLabel("<b>Баллистический профиль</b>", side));
         auto *profileHint = new QLabel(
-            "4000 ед/с — предварительная оценка из прежнего HUD-предиктора, "
-            "не подтверждённая скорость снаряда.", side);
+            QString("Developer CFG загружен · %1\n%2 ед/с · гравитация %3")
+                .arg(QFileInfo(developerConfig_.path).fileName())
+                .arg(developerConfig_.projectileSpeed, 0, 'f', 0)
+                .arg(developerConfig_.gravity, 0, 'f', 0), side);
         profileHint->setWordWrap(true);
         profileHint->setStyleSheet("color:#c5a879;");
+        profileHint->setToolTip(
+            "Для изменения параметров закрой TFC и отредактируй tfc.cfg рядом с EXE.");
         right->addWidget(profileHint);
 
         right->addWidget(new QLabel("<b>Lua bridge</b>", side));
@@ -255,6 +266,44 @@ protected:
 #endif
 
 private:
+    static DeveloperConfig loadDeveloperConfig()
+    {
+        DeveloperConfig config;
+        config.path = QDir(QCoreApplication::applicationDirPath()).filePath("tfc.cfg");
+
+        if (!QFileInfo::exists(config.path)) {
+            QFile file(config.path);
+            if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                const QByteArray defaults =
+                    "# TFC developer-only ballistics settings. Restart TFC after editing.\n"
+                    "[ballistics]\n"
+                    "projectile_speed=4000\n"
+                    "gravity=600\n\n"
+                    "[aim]\n"
+                    "tolerance_deg=1.5\n"
+                    "step_deg_per_tick=2.0\n\n"
+                    "[game]\n"
+                    "muzzle_attachment=auto\n";
+                file.write(defaults);
+            }
+        }
+
+        QSettings cfg(config.path, QSettings::IniFormat);
+        config.projectileSpeed = qBound(
+            1.0, cfg.value("ballistics/projectile_speed", 4000.0).toDouble(), 30000.0);
+        config.gravity = qBound(
+            1.0, cfg.value("ballistics/gravity", 600.0).toDouble(), 3000.0);
+        config.aimToleranceDeg = qBound(
+            0.1, cfg.value("aim/tolerance_deg", 1.5).toDouble(), 10.0);
+        config.aimStepDegPerTick = qBound(
+            0.1, cfg.value("aim/step_deg_per_tick", 2.0).toDouble(), 10.0);
+        config.muzzleAttachment =
+            cfg.value("game/muzzle_attachment", "auto").toString().trimmed();
+        if (config.muzzleAttachment.isEmpty())
+            config.muzzleAttachment = "auto";
+        return config;
+    }
+
     static QDoubleSpinBox *makeSpin(
         QWidget *parent, double minimum, double maximum, double value)
     {
@@ -365,6 +414,10 @@ private:
 
         QSettings settings("TFC", "TacticalFireControl");
         settings.setValue("garrysmodDirectory", path);
+        bridge_.setDeveloperOptions(
+            developerConfig_.muzzleAttachment,
+            developerConfig_.aimToleranceDeg,
+            developerConfig_.aimStepDegPerTick);
         bridge_.setGmodDirectory(path);
 
         bridgeLabel_->setText(
@@ -401,13 +454,17 @@ private:
         const QJsonObject s = bridge_.state();
         bridgeLabel_->setText("Lua bridge: CONNECTED · protocol 1");
         const QString vehicleClass = s.value("vehicle_class").toString("нет LVS-машины");
+        const QJsonObject muzzleAngle = s.value("muzzle_angle").toObject();
         telemetryLabel_->setText(QString(
             "Машина: %1\nLVS-сиденье: %2\nAttachment ствола: %3\n"
-            "Турель наведена: %4\nОрудие готово: %5\n"
-            "Боезапас / перегрев: %6 / %7")
+            "Фактический угол ствола: yaw %4° / pitch %5°\n"
+            "Орудие в допуске: %6\nОрудие готово: %7\n"
+            "Боезапас / перегрев: %8 / %9")
             .arg(vehicleClass)
             .arg(s.value("in_vehicle").toBool() ? "да" : "нет")
-            .arg(s.value("muzzle_valid").toBool() ? "да" : "нет")
+            .arg(s.value("muzzle_attachment").toString("не найден"))
+            .arg(muzzleAngle.value("yaw").toDouble(), 0, 'f', 2)
+            .arg(muzzleAngle.value("pitch").toDouble(), 0, 'f', 2)
             .arg(s.value("aim_aligned").toBool() ? "да" : "нет")
             .arg(s.value("gunner_ready").toBool() ? "да" : "нет")
             .arg(s.value("ammo_clip").toInt())
@@ -450,7 +507,7 @@ private:
         };
 
         const auto solution = tfc::solveLowArc(
-            origin, target, speed_->value(), gravity_->value());
+            origin, target, developerConfig_.projectileSpeed, developerConfig_.gravity);
         if (!solution) {
             setStatus("F7: для выбранной точки нет низкой баллистической траектории.");
             return;
@@ -503,8 +560,7 @@ private:
     QDoubleSpinBox *targetX_ = nullptr;
     QDoubleSpinBox *targetY_ = nullptr;
     QDoubleSpinBox *targetZ_ = nullptr;
-    QDoubleSpinBox *speed_ = nullptr;
-    QDoubleSpinBox *gravity_ = nullptr;
+    DeveloperConfig developerConfig_;
     QPushButton *aimButton_ = nullptr;
     QPushButton *fireButton_ = nullptr;
     bspvision::BspFile bsp_;

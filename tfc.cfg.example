@@ -1,0 +1,18 @@
+# TFC developer-only settings
+# Edit beside tfc.exe, then restart TFC.
+
+[ballistics]
+# Keep the current BM-30 planning baseline unless measured otherwise.
+projectile_speed=4000
+gravity=600
+
+[aim]
+# The real muzzle attachment angle is compared against this tolerance.
+tolerance_deg=1.5
+# Player view is nudged by this many degrees per CreateMove frame.
+step_deg_per_tick=2.0
+
+[game]
+# "auto" uses the LVS vehicle's TurretBallisticsMuzzleAttachment,
+# falling back to "muzzle". Set an exact attachment name only when needed.
+muzzle_attachment=auto
