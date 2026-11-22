@@ -905,14 +905,6 @@ private:
                     ? "СТВОЛ В ДОПУСКЕ" : "ОЖИДАНИЕ СОВМЕЩЕНИЯ СТВОЛА")))));
         const QString fireBlock = state.value("fire_block_reason").toString();
         const QString commandText = state.value("command_message").toString();
-        const QString serverAck = state.value("server_fire_ack").toString();
-        if (fireRequestPending_ &&
-            serverAck != fireAckAtRequest_ &&
-            (serverAck == "server_accepted" || serverAck == "server_rejected" ||
-             serverAck == "request_failed" || serverAck == "disconnected")) {
-            fireRequestPending_ = false;
-        }
-
         // Recalculate from the newest muzzle/sight positions while alignment is
         // still in progress. A fixed angle from the original F7 snapshot becomes
         // stale as the platform and attachments move during turret traverse.
@@ -1032,7 +1024,6 @@ private:
                                   : reason));
             return;
         }
-        fireAckAtRequest_ = fireState.value("server_fire_ack").toString();
         if (!bridge_.sendFire(
                 lastAimYaw_, lastAimPitch_,
                 lastAimMuzzleYaw_, lastAimMuzzlePitch_)) {
@@ -1040,6 +1031,7 @@ private:
             return;
         }
         fireRequestPending_ = true;
+        QTimer::singleShot(1000, this, [this] { fireRequestPending_ = false; });
         setStatus("F8: серверу отправлен запрос на один импульс LVS ATTACK.");
     }
 
@@ -1098,7 +1090,6 @@ private:
     bool lastAimSet_ = false;
     bool lastAimLvsCompensated_ = false;
     bool fireRequestPending_ = false;
-    QString fireAckAtRequest_;
     bool hotkeyF7Registered_ = false;
     bool hotkeyF8Registered_ = false;
 };
