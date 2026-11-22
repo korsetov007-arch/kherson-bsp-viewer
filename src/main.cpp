@@ -806,6 +806,7 @@ private:
             if (bridge_.connected())
                 bridge_.sendCancel();
             lastAimSet_ = false;
+            fireRequestPending_ = false;
             fireButton_->setEnabled(false);
             setStatus("Режим баллистики LVS изменился: старая доводка отменена. Повтори F7.");
         }
@@ -901,6 +902,39 @@ private:
                     ? "СТВОЛ В ДОПУСКЕ" : "ОЖИДАНИЕ СОВМЕЩЕНИЯ СТВОЛА")))));
         const QString fireBlock = state.value("fire_block_reason").toString();
         const QString commandText = state.value("command_message").toString();
+        const QString serverAck = state.value("server_fire_ack").toString();
+        if (fireRequestPending_ &&
+            serverAck != fireAckAtRequest_ &&
+            (serverAck == "server_accepted" || serverAck == "server_rejected" ||
+             serverAck == "request_failed" || serverAck == "disconnected")) {
+            fireRequestPending_ = false;
+        }
+
+        // Recalculate from the newest muzzle/sight positions while alignment is
+        // still in progress. A fixed angle from the original F7 snapshot becomes
+        // stale as the platform and attachments move during turret traverse.
+        if (lastAimSet_ && !fireRequestPending_ &&
+            !state.value("aim_aligned").toBool()) {
+            const auto livePlan = makeAimPlan(state);
+            if (livePlan) {
+                if (bridge_.sendAim(
+                        livePlan->viewYawDeg, livePlan->viewPitchDeg,
+                        livePlan->muzzleYawDeg, livePlan->muzzlePitchDeg)) {
+                    lastAimYaw_ = livePlan->viewYawDeg;
+                    lastAimPitch_ = livePlan->viewPitchDeg;
+                    lastAimMuzzleYaw_ = livePlan->muzzleYawDeg;
+                    lastAimMuzzlePitch_ = livePlan->muzzlePitchDeg;
+                } else {
+                    setStatus("Не удалось обновить цель наведения: " + bridge_.lastError());
+                }
+            } else {
+                bridge_.sendCancel();
+                lastAimSet_ = false;
+                fireButton_->setEnabled(false);
+                setStatus("Потеряно решение наведения: доводка отменена.");
+            }
+        }
+
         weaponLabel_->setText(QString("%1\n%2  ·  %3\nFIRE: %4\n%5")
             .arg(readiness).arg(ammoText).arg(clipText)
             .arg(fireBlock.isEmpty() ? "нет данных" : fireBlock)
@@ -954,6 +988,7 @@ private:
         lastAimMuzzlePitch_ = plan->muzzlePitchDeg;
         lastAimLvsCompensated_ = plan->lvsCompensated;
         lastAimSet_ = true;
+        fireRequestPending_ = false;
         fireButton_->setEnabled(state.value("fire_ready").toBool());
         setStatus(QString("F7: %1 · view %2°/%3° · muzzle %4°/%5°")
             .arg(plan->lvsCompensated ? "LVS BC" : "TFC LOW ARC")
@@ -971,6 +1006,7 @@ private:
             bridge_.sendCancel();
 
         lastAimSet_ = false;
+        fireRequestPending_ = false;
         fireButton_->setEnabled(false);
         setStatus("× Автодоводка отключена — ручное управление камерой возвращено.");
     }
@@ -993,12 +1029,14 @@ private:
                                   : reason));
             return;
         }
+        fireAckAtRequest_ = fireState.value("server_fire_ack").toString();
         if (!bridge_.sendFire(
                 lastAimYaw_, lastAimPitch_,
                 lastAimMuzzleYaw_, lastAimMuzzlePitch_)) {
             setStatus("F8: не удалось записать команду: " + bridge_.lastError());
             return;
         }
+        fireRequestPending_ = true;
         setStatus("F8: серверу отправлен запрос на один импульс LVS ATTACK.");
     }
 
@@ -1013,6 +1051,7 @@ private:
         targetZ_ = z;
         targetSelected_ = true;
         lastAimSet_ = false;
+        fireRequestPending_ = false;
         fireButton_->setEnabled(false);
         view3d_->setTarget(x, y, z);
         topdown_->setMarker(x, y);
@@ -1055,6 +1094,8 @@ private:
     bool targetSelected_ = false;
     bool lastAimSet_ = false;
     bool lastAimLvsCompensated_ = false;
+    bool fireRequestPending_ = false;
+    QString fireAckAtRequest_;
     bool hotkeyF7Registered_ = false;
     bool hotkeyF8Registered_ = false;
 };
